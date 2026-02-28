@@ -1,0 +1,29 @@
+[package]
+name = "morpheum-signing-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Native (std) concrete implementations for Morpheum Signing SDK (HumanSigner, AgentSigner, providers)"
+
+[dependencies]
+morpheum-signing-core = { path = "../core", features = ["std"] }
+
+# HTTP + Async
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+# Cryptography
+ed25519-dalek = { workspace = true }
+
+# Security
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+
+[features]
+default = ["reqwest", "tokio"]
+reqwest = ["dep:reqwest"]
+tokio = ["dep:tokio"]
+full = ["reqwest", "tokio"]

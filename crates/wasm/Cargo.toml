@@ -1,0 +1,31 @@
+[package]
+name = "morpheum-signing-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "WASM + TypeScript bindings for Morpheum Signing SDK (browser support)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+morpheum-signing-core = { path = "../core", default-features = false, features = ["std"] }
+
+# WASM interop
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+tsify = { workspace = true }
+js-sys = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+
+# Browser APIs
+web-sys = { workspace = true }
+
+# Better panic messages
+console_error_panic_hook = { workspace = true, optional = true }
+
+[features]
+default = ["console_error_panic_hook"]
