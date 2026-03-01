@@ -43,9 +43,16 @@ pub enum SigningError {
     #[error("protobuf decode error: {0}")]
     ProtoDecode(#[from] prost::DecodeError),
 
-    /// VC / `TradingKey` claim is invalid or expired.
+    /// VC / `TradingKey` claim is structurally invalid or expired.
     #[error("invalid VC or TradingKey claim: {0}")]
     InvalidClaim(String),
+
+    /// Claim verification failed (issuer mismatch, cryptographic failure, etc.).
+    ///
+    /// Distinct from [`InvalidClaim`](Self::InvalidClaim) which covers structural issues.
+    /// This variant is for semantic/cryptographic verification failures.
+    #[error("claim verification failed: {0}")]
+    ClaimVerification(String),
 
     /// General signing operation failed (e.g., payload too large, unsupported mode).
     #[error("signing failed: {0}")]
@@ -129,5 +136,10 @@ impl SigningError {
     /// Create an `InvalidClaim` error.
     pub fn invalid_claim(msg: impl Into<String>) -> Self {
         Self::InvalidClaim(msg.into())
+    }
+
+    /// Create a `ClaimVerification` error.
+    pub fn claim_verification(msg: impl Into<String>) -> Self {
+        Self::ClaimVerification(msg.into())
     }
 }

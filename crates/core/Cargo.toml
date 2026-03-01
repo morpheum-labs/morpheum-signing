@@ -17,6 +17,10 @@ default = []
 std = ["prost/std", "zeroize/std"]
 # Enables WASM-specific bindings (tsify, wasm-bindgen)
 wasm = ["wasm-bindgen", "tsify"]
+# Dynamic SignerInfo based on signer type (Phase 1)
+dynamic-signer-info = []
+# TradingKeyClaim embedding & verification (Phase 2)
+claim-verification = []
 
 [dependencies]
 morpheum-primitives = { workspace = true }

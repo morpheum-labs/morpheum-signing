@@ -165,7 +165,18 @@ impl<S: Signer> TxBuilder<S> {
     /// Builds and signs the transaction.
     ///
     /// This is the only method that performs the actual signing and nonce fetching.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SigningError::Signing`] if no messages have been added.
     pub async fn sign(self) -> Result<SignedTx, SigningError> {
+        // 0. Validate: at least one message is required
+        if self.messages.is_empty() {
+            return Err(SigningError::signing(
+                "transaction must contain at least one message",
+            ));
+        }
+
         // 1. Resolve nonce
         let nonce = if let Some(provider) = &self.nonce_provider {
             provider.next_nonce(&self.signer.account_id()).await?
@@ -189,9 +200,28 @@ impl<S: Signer> TxBuilder<S> {
         };
 
         // 3. Build AuthInfo + SignerInfo
-        let signer_info = SignerInfo {
+        //
+        // With `dynamic-signer-info`: public key and sign mode are derived from
+        // the signer's actual key type (fixes Critical Issue #1 from audit).
+        // Without: falls back to legacy hardcoded ed25519 for backward compat.
+        #[cfg(feature = "dynamic-signer-info")]
+        let mut signer_info = SignerInfo {
+            public_key: Some(self.signer.public_key_proto()),
+            mode_info: Some(ModeInfo {
+                sum: Some(tx::mode_info::Sum::Single(tx::mode_info::Single {
+                    mode: self.signer.sign_mode() as i32,
+                })),
+            }),
+            chain_type: 0,
+            deadline: self.signing_options.deadline_seconds.unwrap_or(0),
+            signing_options: None,
+            timestamp: None,
+        };
+
+        #[cfg(not(feature = "dynamic-signer-info"))]
+        let mut signer_info = SignerInfo {
             public_key: Some(prost_types::Any {
-                type_url: "type.googleapis.com/cosmos.crypto.ed25519.PubKey".to_string(),
+                type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
                 value: Vec::new(),
             }),
             mode_info: Some(ModeInfo {
@@ -199,11 +229,35 @@ impl<S: Signer> TxBuilder<S> {
                     mode: tx::SignMode::Ed25519 as i32,
                 })),
             }),
-            chain_type: 0, // filled by primitives layer if needed
+            chain_type: 0,
             deadline: self.signing_options.deadline_seconds.unwrap_or(0),
             signing_options: None,
             timestamp: None,
         };
+
+        // 3.5 Embed TradingKeyClaim if present (fixes Critical Issue #2).
+        //
+        // The claim is validated for structural correctness (expiry, nonce range,
+        // signature presence) and then serialized into the `SignerInfo.signing_options`
+        // field. The chain-side extracts and cryptographically verifies the claim
+        // via the VC hot-path.
+        if let Some(ref claim) = self.trading_key_claim {
+            #[cfg(feature = "std")]
+            {
+                let now_secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                claim.validate(now_secs)?;
+            }
+
+            let claim_any = claim.to_proto_any();
+            signer_info.signing_options = Some(tx::SigningOptions {
+                wasm_seed: claim_any.encode_to_vec(),
+                algo_hint: "trading_key_claim".into(),
+                ..Default::default()
+            });
+        }
 
         let auth_info = AuthInfo {
             signer_infos: vec![signer_info],
@@ -225,17 +279,7 @@ impl<S: Signer> TxBuilder<S> {
         let signature = self.signer.sign(&sign_doc).await?;
         let sig_bytes = signature.to_bytes();
 
-        // 7. Validate TradingKeyClaim if present (requires std for wall-clock time)
-        #[cfg(feature = "std")]
-        if let Some(ref claim) = self.trading_key_claim {
-            let now_secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            claim.validate(now_secs)?;
-        }
-
-        // 8. Build TxRaw and Tx
+        // 7. Build TxRaw and Tx
         let tx_raw = TxRaw {
             body_bytes,
             auth_info_bytes,

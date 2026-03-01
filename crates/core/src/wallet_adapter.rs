@@ -22,7 +22,8 @@ use crate::{
 /// - Injected browser wallets have different lifetime/error semantics.
 /// - Allows `TxBuilder` to work uniformly with both local keys and injected wallets.
 /// - Perfect for WASM/browser environments where signing happens in JavaScript.
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait WalletAdapter: Send + Sync + 'static {
     /// Requests a raw signature from the external wallet for the canonical `SignDoc`.
     ///
@@ -59,7 +60,8 @@ pub type BoxedWalletAdapter = Box<dyn WalletAdapter>;
 
 /// Extension trait for additional convenience methods.
 /// Keeps the main `WalletAdapter` trait minimal (Interface Segregation Principle).
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait WalletAdapterExt: WalletAdapter {
     /// Convenience: requests signature and returns `Signature` wrapper.
     async fn request_signature_wrapped(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
@@ -68,5 +70,6 @@ pub trait WalletAdapterExt: WalletAdapter {
 }
 
 // Blanket implementation for all `WalletAdapter` implementors (DRY)
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<T: WalletAdapter + ?Sized> WalletAdapterExt for T {}

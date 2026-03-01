@@ -20,7 +20,8 @@ use crate::{
 /// **Design Pattern**: Strategy (`GoF`) — allows `TxBuilder` to swap between
 /// different nonce fetching strategies (Sentry vs `AgentPortal`) without knowing
 /// the implementation details.
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait NonceProvider: Send + Sync + 'static {
     /// Returns the next valid `Nonce` for the given `AccountId`.
     ///

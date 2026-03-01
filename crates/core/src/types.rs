@@ -75,6 +75,22 @@ pub enum WalletType {
     Hardware = 255,
 }
 
+impl WalletType {
+    /// Returns the default [`SignMode`] for this wallet type.
+    ///
+    /// Used by `Signer::sign_mode()` default implementation and `TxBuilder`
+    /// to produce the correct `ModeInfo` in `SignerInfo`.
+    #[must_use]
+    pub const fn default_sign_mode(&self) -> tx::SignMode {
+        match self {
+            Self::Native | Self::Solana | Self::Agent => tx::SignMode::Ed25519,
+            Self::Evm => tx::SignMode::Secp256k1,
+            Self::Bitcoin => tx::SignMode::SchnorrAggregate,
+            Self::Hardware => tx::SignMode::Ed25519,
+        }
+    }
+}
+
 impl fmt::Display for WalletType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -145,6 +161,39 @@ impl PublicKey {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&hash);
         AccountId(arr)
+    }
+
+    /// Returns the protobuf `type_url` for this public key type.
+    ///
+    /// These URLs match the chain-side `PublicKey::from_proto()` dispatch
+    /// in `mormcore/crates/primitives/src/crypto.rs`.
+    #[must_use]
+    pub fn type_url(&self) -> &'static str {
+        match self {
+            Self::Ed25519(_) | Self::Agent(_) => "/cosmos.crypto.ed25519.PubKey",
+            Self::Secp256k1(_) => "/cosmos.crypto.secp256k1.PubKey",
+            Self::Schnorr(_) => "/morpheum.crypto.schnorr.PubKey",
+        }
+    }
+
+    /// Returns the raw public key bytes for protobuf encoding.
+    #[must_use]
+    pub fn to_proto_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Ed25519(b) | Self::Agent(b) | Self::Schnorr(b) => b.to_vec(),
+            Self::Secp256k1(b) => b.to_vec(),
+        }
+    }
+
+    /// Packs this public key into a [`prost_types::Any`] for `SignerInfo.public_key`.
+    ///
+    /// This is the canonical encoding expected by the Morpheum chain.
+    #[must_use]
+    pub fn to_proto_any(&self) -> prost_types::Any {
+        prost_types::Any {
+            type_url: self.type_url().into(),
+            value: self.to_proto_bytes(),
+        }
     }
 }
 

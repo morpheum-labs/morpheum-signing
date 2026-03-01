@@ -14,13 +14,26 @@ crate-type = ["cdylib"]
 [dependencies]
 morpheum-signing-core = { path = "../core", default-features = false, features = ["std", "wasm"] }
 
+# Protobuf encoding (SignDoc::encode_to_vec, Any)
+prost = { workspace = true }
+prost-types = { workspace = true }
+
+# Hashing & encoding
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+# Async trait (needed for Signer impls with ?Send on wasm32)
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+
 # WASM interop
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 tsify = { workspace = true }
 js-sys = { workspace = true }
-serde = { workspace = true }
-serde-wasm-bindgen = { workspace = true }
 
 # Browser APIs
 web-sys = { workspace = true }
@@ -28,5 +41,18 @@ web-sys = { workspace = true }
 # Better panic messages (optional but enabled by default)
 console_error_panic_hook = { workspace = true, optional = true }
 
+# WASM-specific: enable browser crypto support for transitive deps pulled in
+# by morm-primitives (ed25519-dalek, k256, uuid).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+uuid = { version = "1", features = ["js"] }
+
 [features]
-default = ["console_error_panic_hook"]
+default = ["full-wasm"]
+
+# Full WASM feature set (audit-driven capabilities + panic hook)
+full-wasm = [
+    "console_error_panic_hook",
+    "morpheum-signing-core/claim-verification",
+    "morpheum-signing-core/dynamic-signer-info",
+]

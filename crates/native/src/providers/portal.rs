@@ -21,6 +21,7 @@ use morpheum_signing_core::{
 /// Hot-path nonce provider for AgentPortal (recommended for AI agents, HFT, marketplace).
 ///
 /// This is the primary provider for high-frequency autonomous agents.
+/// Connects to a local or remote AgentPortal gRPC/HTTP endpoint.
 #[cfg(feature = "http")]
 pub struct PortalNonceProvider {
     client: Client,
@@ -30,22 +31,37 @@ pub struct PortalNonceProvider {
 #[cfg(feature = "http")]
 impl PortalNonceProvider {
     /// Creates a new provider for an AgentPortal instance.
-    pub fn new(base_url: impl Into<String>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SigningError::Nonce`] if the HTTP client cannot be initialized
+    /// (e.g., TLS backend failure).
+    pub fn new(base_url: impl Into<String>) -> Result<Self, SigningError> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_millis(300))
             .connect_timeout(std::time::Duration::from_millis(100))
             .build()
-            .expect("failed to build reqwest client for AgentPortal");
+            .map_err(|e| {
+                SigningError::Nonce(NonceError::FetchFailed(format!(
+                    "failed to build HTTP client for AgentPortal: {e}"
+                )))
+            })?;
 
-        Self {
+        Ok(Self {
             client,
             base_url: base_url.into().trim_end_matches('/').to_string(),
-        }
+        })
     }
 
-    /// Default for local development.
+    /// Default for local development (`http://127.0.0.1:9090`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the HTTP client cannot be constructed (should not happen
+    /// under normal system conditions).
     pub fn local() -> Self {
         Self::new("http://127.0.0.1:9090")
+            .expect("failed to build local AgentPortal provider")
     }
 }
 
@@ -84,18 +100,25 @@ impl NonceProvider for PortalNonceProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|e| SigningError::Nonce(NonceError::FetchFailed(e.to_string())))?;
+            .map_err(|e| {
+                SigningError::Nonce(NonceError::FetchFailed(format!(
+                    "POST {url} failed: {e}"
+                )))
+            })?;
 
-        if !response.status().is_success() {
-            return Err(SigningError::Nonce(NonceError::FetchFailed(
-                format!("HTTP {}", response.status()),
-            )));
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(SigningError::Nonce(NonceError::FetchFailed(format!(
+                "POST {url} returned HTTP {status}: {body}"
+            ))));
         }
 
-        let resp: GenerateNextNonceResponse = response
-            .json()
-            .await
-            .map_err(|_| SigningError::Nonce(NonceError::InvalidResponse))?;
+        let resp: GenerateNextNonceResponse = response.json().await.map_err(|e| {
+            SigningError::Nonce(NonceError::FetchFailed(format!(
+                "POST {url} returned invalid JSON: {e}"
+            )))
+        })?;
 
         Ok(Nonce {
             monotonic: resp.monotonic,

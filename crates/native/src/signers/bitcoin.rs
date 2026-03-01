@@ -73,6 +73,12 @@ impl Signer for BitcoinSigner {
     ///
     /// The `SignDoc` is first hashed with SHA-256 (standard, deterministic practice
     /// for structured data with Schnorr). Returns a 64-byte signature (r || s).
+    ///
+    /// # Constant-Time Guarantees
+    ///
+    /// The `bitcoin::secp256k1` crate (libsecp256k1) performs all scalar operations
+    /// in constant time. The `sign_schnorr_no_aux_rand` variant uses no additional
+    /// randomness, making signing fully deterministic and reproducible.
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
         let hash = Sha256::digest(bytes);

@@ -54,6 +54,12 @@ impl AgentSigner {
 #[async_trait]
 impl Signer for AgentSigner {
     /// Signs the canonical `SignDoc` using the TradingKey (ed25519).
+    ///
+    /// # Constant-Time Guarantees
+    ///
+    /// Uses `ed25519-dalek` which performs constant-time signing with respect to
+    /// the secret key material. The deterministic nonce prevents both timing
+    /// side-channels and nonce-reuse attacks.
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
         let signature = self.trading_key.sign(&bytes);

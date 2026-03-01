@@ -10,7 +10,6 @@ use morpheum_signing_core::{
     prelude::*,
     proto::tx::v1::Nonce,
 };
-use morpheum_signing_native::prelude::*;
 
 /// Deterministic nonce provider used throughout tests.
 /// Returns fixed values to make tests reproducible and easy to reason about.
@@ -45,25 +44,31 @@ pub fn test_account_id() -> AccountId {
     AccountId([0x11u8; 32])
 }
 
+/// Returns the current Unix timestamp in seconds (utility for claim tests).
+#[must_use]
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(1_700_000_000)
+}
+
 /// Creates a valid test `TradingKeyClaim` for agent-related tests.
 ///
 /// This claim includes a reasonable expiry (24 hours from now) and a nonce
 /// sub-range suitable for testing agent delegation and parallelism.
 #[must_use]
 pub fn test_trading_key_claim() -> TradingKeyClaim {
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(1_700_000_000);
+    let now = now_secs();
 
     VcClaimBuilder::new()
         .issuer(test_account_id())
         .subject(test_account_id())
         .permissions(1 << 0) // TRADE permission
         .max_daily_usd(1_000_000)
-        .expiry(now_secs + 86_400) // 24 hours from now
+        .expiry(now + 86_400) // 24 hours from now
         .nonce_sub_range(1000, 2000)
-        .signature(Signature(vec![0u8; 64])) // dummy signature for tests only
-        .build()
+        .signature(Signature::Ed25519([1u8; 64])) // non-zero dummy signature for tests
+        .build(now)
         .expect("Failed to build test TradingKeyClaim — this should never happen")
 }

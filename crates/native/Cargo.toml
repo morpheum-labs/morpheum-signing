@@ -20,6 +20,9 @@ ed25519-dalek = { workspace = true, optional = true }
 k256 = { workspace = true, optional = true }
 bitcoin = { workspace = true, optional = true }
 
+# BIP-39 mnemonic support (optional)
+bip39 = { workspace = true, optional = true }
+
 # Protobuf (for Message::encode_to_vec in signers)
 prost = { workspace = true }
 
@@ -35,8 +38,8 @@ hex = { workspace = true }
 async-trait = { workspace = true }
 
 [features]
-# Default: everything needed for most use cases
-default = ["http", "full-crypto"]
+# Default: full feature set for most use cases
+default = ["full"]
 
 # Networking for nonce providers (Sentry + Portal)
 http = ["dep:reqwest", "dep:tokio"]
@@ -55,5 +58,12 @@ bitcoin = ["schnorr"]          # BitcoinSigner (Taproot)
 # Full crypto support
 full-crypto = ["native", "evm", "solana", "bitcoin"]
 
+# BIP-39 mnemonic derivation
+bip39 = ["dep:bip39"]
+
+# Forward audit-driven features to core
+claim-verification = ["morpheum-signing-core/claim-verification"]
+dynamic-signer-info = ["morpheum-signing-core/dynamic-signer-info"]
+
 # Everything
-full = ["http", "full-crypto"]
+full = ["http", "full-crypto", "bip39", "claim-verification", "dynamic-signer-info"]

@@ -1,0 +1,38 @@
+[package]
+name = "morpheum-signing-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+morpheum-signing-core = { path = "../crates/core", features = ["std", "claim-verification", "dynamic-signer-info"] }
+morpheum-signing-native = { path = "../crates/native", features = ["full"] }
+arbitrary = { version = "1", features = ["derive"] }
+
+# Prevent this from interfering with the main workspace
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_seed_generation"
+path = "fuzz_targets/fuzz_seed_generation.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_claim_construction"
+path = "fuzz_targets/fuzz_claim_construction.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_address_mapping"
+path = "fuzz_targets/fuzz_address_mapping.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_claim_encoding"
+path = "fuzz_targets/fuzz_claim_encoding.rs"
+doc = false

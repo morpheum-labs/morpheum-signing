@@ -47,6 +47,12 @@ impl EvmSigner {
 #[async_trait]
 impl Signer for EvmSigner {
     /// Signs the canonical `SignDoc` using secp256k1 and returns `Signature::Secp256k1`.
+    ///
+    /// # Constant-Time Guarantees
+    ///
+    /// The `k256` crate performs ECDSA signing with constant-time scalar arithmetic
+    /// (via the `crypto-bigint` crate). Secret key material is never compared or
+    /// branched on in variable time.
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
         let signature: SecpSignature = self.signing_key.sign_prehash(&bytes)
