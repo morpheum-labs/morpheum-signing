@@ -2,41 +2,40 @@
 //!
 //! Optimized for sub-millisecond performance with TradingKey VC delegation and
 //! isolated nonce sub-ranges for unlimited parallelism.
-//!
-//! Fully aligned with your real protos: auth.v1, vc.v1, identity.v1, tx.v1.
 
+#[cfg(feature = "http")]
 use async_trait::async_trait;
+#[cfg(feature = "http")]
 use reqwest::Client;
+#[cfg(feature = "http")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "http")]
 use morpheum_signing_core::{
-    claim::TradingKeyClaim,
     error::{NonceError, SigningError},
     nonce::NonceProvider,
-    proto::{
-        identity::v1::AgentId,
-        tx::v1::Nonce,
-    },
+    proto::tx::v1::Nonce,
     types::AccountId,
 };
 
 /// Hot-path nonce provider for AgentPortal (recommended for AI agents, HFT, marketplace).
 ///
 /// This is the primary provider for high-frequency autonomous agents.
-#[derive(Debug, Clone)]
+#[cfg(feature = "http")]
 pub struct PortalNonceProvider {
     client: Client,
     base_url: String,
 }
 
+#[cfg(feature = "http")]
 impl PortalNonceProvider {
     /// Creates a new provider for an AgentPortal instance.
     pub fn new(base_url: impl Into<String>) -> Self {
         let client = Client::builder()
-            .timeout(std::time::Duration::from_millis(300))   // tight for hot-path
+            .timeout(std::time::Duration::from_millis(300))
             .connect_timeout(std::time::Duration::from_millis(100))
             .build()
-            .expect("Failed to build reqwest client for AgentPortal");
+            .expect("failed to build reqwest client for AgentPortal");
 
         Self {
             client,
@@ -50,45 +49,33 @@ impl PortalNonceProvider {
     }
 }
 
-/// Request to AgentPortal for next nonce (supports TradingKey VC from vc.v1).
+/// Request body for the next-nonce endpoint.
+#[cfg(feature = "http")]
 #[derive(Debug, Serialize)]
 struct GenerateNextNonceRequest {
-    agent_id: AgentId,
-    trading_key_claim: Option<TradingKeyClaim>,
+    agent_did: String,
+    agent_hash: String,
 }
 
-/// Response from AgentPortal (contains the canonical tx.v1.Nonce).
+/// Response from AgentPortal containing the canonical `tx.v1.Nonce`.
+#[cfg(feature = "http")]
 #[derive(Debug, Deserialize)]
 struct GenerateNextNonceResponse {
-    nonce: Nonce,
+    monotonic: u64,
+    ts_ms: u32,
+    sub: u32,
 }
 
+#[cfg(feature = "http")]
 #[async_trait]
 impl NonceProvider for PortalNonceProvider {
     async fn next_nonce(&self, account_id: &AccountId) -> Result<Nonce, SigningError> {
-        self.next_nonce_with_claim(account_id, None).await
-    }
-
-    fn strategy_name(&self) -> &'static str {
-        "agent_portal_hot_nonce_provider"
-    }
-}
-
-impl PortalNonceProvider {
-    /// Advanced method: Generate next nonce with TradingKeyClaim for sub-range parallelism.
-    pub async fn next_nonce_with_claim(
-        &self,
-        account_id: &AccountId,
-        claim: Option<&TradingKeyClaim>,
-    ) -> Result<Nonce, SigningError> {
         let url = format!("{}/auth/v1/next-nonce", self.base_url);
+        let hash = hex::encode(account_id.0);
 
         let request = GenerateNextNonceRequest {
-            agent_id: AgentId {
-                did: format!("did:agent:{}", hex::encode(account_id.0)),
-                hash: hex::encode(account_id.0),
-            },
-            trading_key_claim: claim.cloned(),
+            agent_did: format!("did:agent:{hash}"),
+            agent_hash: hash,
         };
 
         let response = self
@@ -108,8 +95,16 @@ impl PortalNonceProvider {
         let resp: GenerateNextNonceResponse = response
             .json()
             .await
-            .map_err(|e| SigningError::Nonce(NonceError::InvalidResponse))?;
+            .map_err(|_| SigningError::Nonce(NonceError::InvalidResponse))?;
 
-        Ok(resp.nonce)
+        Ok(Nonce {
+            monotonic: resp.monotonic,
+            ts_ms: resp.ts_ms,
+            sub: resp.sub,
+        })
+    }
+
+    fn strategy_name(&self) -> &'static str {
+        "agent_portal_hot_nonce_provider"
     }
 }

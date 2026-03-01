@@ -1,6 +1,6 @@
 //! Wallet Adapter trait — Adapter Pattern for injected and external wallets.
 //!
-//! This trait adapts browser-injected wallets (MetaMask, Phantom, etc.), hardware wallets,
+//! This trait adapts browser-injected wallets (`MetaMask`, Phantom, etc.), hardware wallets,
 //! and any external signing source into a uniform async interface that `TxBuilder` can use.
 //! It is deliberately separate from `Signer` to maintain Interface Segregation and support
 //! wallets that cannot directly implement `Signer` (e.g. JavaScript interop in WASM).
@@ -13,9 +13,9 @@ use crate::{
     types::{Address, Signature, WalletType},
 };
 
-/// Adapter for external/injected wallets (MetaMask, Phantom, Taproot, Ledger, etc.).
+/// Adapter for external/injected wallets (`MetaMask`, Phantom, Taproot, Ledger, etc.).
 ///
-/// **Design Pattern**: Adapter (GoF) — converts the interface of an external wallet
+/// **Design Pattern**: Adapter (`GoF`) — converts the interface of an external wallet
 /// into the expected interface for the signing pipeline.
 ///
 /// **Why separate from `Signer`?**
@@ -40,8 +40,8 @@ pub trait WalletAdapter: Send + Sync + 'static {
     /// This is used by `AddressMapper` to derive the canonical Morpheum `AccountId`.
     fn external_address(&self) -> &Address;
 
-    /// Optional human-readable name of the wallet (e.g. "MetaMask", "Phantom").
-    /// Default implementation provided for DRYness.
+    /// Optional human-readable name of the wallet (e.g. "`MetaMask`", "Phantom").
+    /// Default implementation provided for `DRYness`.
     fn name(&self) -> &'static str {
         match self.wallet_type() {
             WalletType::Evm => "EVM Wallet (MetaMask/Ledger)",

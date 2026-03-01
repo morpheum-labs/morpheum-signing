@@ -6,24 +6,48 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Native (std) concrete implementations for Morpheum Signing SDK (HumanSigner, AgentSigner, providers)"
+description = "Native (std) concrete implementations for Morpheum Signing SDK"
 
 [dependencies]
 morpheum-signing-core = { path = "../core", features = ["std"] }
 
-# HTTP + Async
+# Networking & runtime
 reqwest = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
-# Cryptography
-ed25519-dalek = { workspace = true }
+# Cryptography (all optional via features)
+ed25519-dalek = { workspace = true, optional = true }
+k256 = { workspace = true, optional = true }
+bitcoin = { workspace = true, optional = true }
 
-# Security
+# Security & serialization
 zeroize = { workspace = true }
 secrecy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+async-trait = { workspace = true }
 
 [features]
-default = ["reqwest", "tokio"]
-reqwest = ["dep:reqwest"]
-tokio = ["dep:tokio"]
-full = ["reqwest", "tokio"]
+# Default: everything needed for most use cases
+default = ["http", "full-crypto"]
+
+# Networking for nonce providers (Sentry + Portal)
+http = ["dep:reqwest", "dep:tokio"]
+
+# Individual crypto backends
+ed25519 = ["dep:ed25519-dalek"]
+secp256k1 = ["dep:k256"]
+schnorr = ["dep:bitcoin"]
+
+# Convenience groups
+native = ["ed25519"]           # HumanSigner + AgentSigner
+evm = ["secp256k1"]            # EvmSigner + MetaMask local fallback
+solana = ["ed25519"]           # SolanaSigner
+bitcoin = ["schnorr"]          # BitcoinSigner (Taproot)
+
+# Full crypto support
+full-crypto = ["native", "evm", "solana", "bitcoin"]
+
+# Everything
+full = ["http", "full-crypto"]

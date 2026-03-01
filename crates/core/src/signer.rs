@@ -4,30 +4,29 @@
 //! It is deliberately minimal (Interface Segregation), object-safe, and async
 //! to support injected browser wallets, hardware devices, and remote signers.
 //!
-//! The design follows SOLID, DRY, and best industry patterns (used in solana-sdk,
-//! ethers-core, cosmos-sdk-rs, and tower).
+//! Updated to support the multi-curve `PublicKey` and `Signature` enums from types.rs.
 
 use async_trait::async_trait;
 
 use crate::{
     error::SigningError,
-    proto::SignDoc,           // from morpheum_primitives::tx::v1
+    proto::tx::v1::SignDoc,
     types::{AccountId, PublicKey, Signature, WalletType},
 };
 
 /// Core signing abstraction.
 ///
-/// Every concrete signer (`HumanSigner`, `AgentSigner`, `MetaMaskAdapter`, etc.)
+/// Every concrete signer (`HumanSigner`, `AgentSigner`, `MetaMaskAdapter`, `PhantomAdapter`, etc.)
 /// implements this trait.
 ///
 /// **Design invariants**:
 /// - `sign` receives the exact canonical `SignDoc` protobuf that Morpheum nodes expect.
-/// - Returns raw signature bytes (curve-agnostic).
-/// - `public_key` and `account_id` are synchronous for performance (used in TxBuilder).
+/// - Returns the curve-agnostic `Signature` enum (Ed25519, Secp256k1, Schnorr).
+/// - `public_key` and `account_id` are synchronous for performance (used in `TxBuilder`).
 /// - `wallet_type` drives nonce strategy and address mapping in `TxBuilder`.
 #[async_trait]
 pub trait Signer: Send + Sync + 'static {
-    /// Signs the canonical `SignDoc` and returns the raw signature bytes.
+    /// Signs the canonical `SignDoc` and returns the curve-agnostic `Signature` enum.
     ///
     /// This is the only method that performs cryptographic signing.
     /// The `SignDoc` contains `body_bytes`, `auth_info_bytes`, `chain_id`, and `account_number`
@@ -44,8 +43,8 @@ pub trait Signer: Send + Sync + 'static {
 
     /// Returns the canonical `AccountId` for this signer.
     ///
-    /// Default implementation derives it from the public key (blake3).
-    /// Concrete impls may override for efficiency (e.g. cached AgentId).
+    /// Default implementation derives it from the public key (blake3 hash).
+    /// Concrete impls may override for efficiency (e.g. cached `AgentId`).
     fn account_id(&self) -> AccountId {
         self.public_key().to_account_id()
     }
@@ -58,13 +57,15 @@ pub type BoxedSigner = Box<dyn Signer>;
 /// (Interface Segregation + DRY)
 #[async_trait]
 pub trait SignerExt: Signer {
-    /// Convenience: signs and returns raw bytes directly (useful for some wallet adapters).
+    /// Convenience: signs and returns raw signature bytes directly (useful for some wallet adapters).
     async fn sign_bytes(&self, sign_doc: &SignDoc) -> Result<Vec<u8>, SigningError> {
         let signature = self.sign(sign_doc).await?;
-        Ok(signature.0)
+        Ok(match signature {
+            Signature::Ed25519(b) | Signature::Secp256k1(b) | Signature::Schnorr(b) => b.to_vec(),
+        })
     }
 }
 
-// Blanket implementation for all `Signer` implementors
+// Blanket implementation for all `Signer` implementors.
 #[async_trait]
 impl<T: Signer + ?Sized> SignerExt for T {}

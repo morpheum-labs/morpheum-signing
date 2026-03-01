@@ -1,31 +1,36 @@
 //! SentryNonceProvider — Concrete nonce strategy for human/sequential mode.
 //!
-//! Fetches the full NonceState from the real Morpheum endpoint:
+//! Fetches the nonce state from the real Morpheum endpoint:
 //!     GET /auth/v1/nonce-state?address=<hex>
 //!
-//! Then computes the next canonical tx.v1.Nonce for SIGN_MODE_DIRECT
+//! Then computes the next canonical `tx.v1.Nonce` for `SIGN_MODE_DIRECT`
 //! (sequential monotonic for MetaMask/EVM compatibility).
 
+#[cfg(feature = "http")]
 use async_trait::async_trait;
+#[cfg(feature = "http")]
 use reqwest::Client;
+#[cfg(feature = "http")]
 use serde::Deserialize;
 
+#[cfg(feature = "http")]
 use morpheum_signing_core::{
     error::{NonceError, SigningError},
     nonce::NonceProvider,
-    proto::{auth::v1 as auth, tx::v1::Nonce},
+    proto::tx::v1::Nonce,
     types::AccountId,
 };
 
 /// Concrete nonce provider for Sentry nodes (human / sequential compatibility).
 ///
-/// Uses the real auth.v1 endpoints and structures from your protos.
-#[derive(Debug, Clone)]
+/// Uses the real `auth.v1` endpoints from Morpheum.
+#[cfg(feature = "http")]
 pub struct SentryNonceProvider {
     client: Client,
     base_url: String,
 }
 
+#[cfg(feature = "http")]
 impl SentryNonceProvider {
     /// Creates a new provider pointing to a Sentry node.
     pub fn new(base_url: impl Into<String>) -> Self {
@@ -33,7 +38,7 @@ impl SentryNonceProvider {
             .timeout(std::time::Duration::from_secs(10))
             .connect_timeout(std::time::Duration::from_secs(5))
             .build()
-            .expect("Failed to build reqwest client");
+            .expect("failed to build reqwest client");
 
         Self {
             client,
@@ -47,17 +52,18 @@ impl SentryNonceProvider {
     }
 }
 
-/// Response from /auth/v1/nonce-state (exact match to your proto).
+/// Response from `/auth/v1/nonce-state`.
+#[cfg(feature = "http")]
 #[derive(Debug, Deserialize)]
 struct QueryNonceStateResponse {
-    state: auth::NonceState,
+    last_monotonic: u64,
 }
 
+#[cfg(feature = "http")]
 #[async_trait]
 impl NonceProvider for SentryNonceProvider {
     async fn next_nonce(&self, account_id: &AccountId) -> Result<Nonce, SigningError> {
         let address_hex = hex::encode(account_id.0);
-
         let url = format!("{}/auth/v1/nonce-state?address={}", self.base_url, address_hex);
 
         let resp = self
@@ -76,14 +82,10 @@ impl NonceProvider for SentryNonceProvider {
         let query_resp: QueryNonceStateResponse = resp
             .json()
             .await
-            .map_err(|e| SigningError::Nonce(NonceError::InvalidResponse))?;
+            .map_err(|_| SigningError::Nonce(NonceError::InvalidResponse))?;
 
-        let state = query_resp.state;
+        let next_monotonic = query_resp.last_monotonic + 1;
 
-        // Compute next sequential nonce for human compatibility
-        let next_monotonic = state.last_monotonic + 1;
-
-        // Current timestamp in milliseconds (for replay protection)
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u32)
@@ -92,7 +94,7 @@ impl NonceProvider for SentryNonceProvider {
         Ok(Nonce {
             monotonic: next_monotonic,
             ts_ms: now_ms,
-            sub: 0, // Sequential mode for humans / MetaMask compatibility
+            sub: 0,
         })
     }
 

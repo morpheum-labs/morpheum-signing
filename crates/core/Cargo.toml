@@ -13,7 +13,10 @@ crate-type = ["lib"]
 
 [features]
 default = []
+# Enables std support (required for native and some WASM features)
 std = ["prost/std", "zeroize/std", "secrecy/std"]
+# Enables WASM-specific bindings (tsify, wasm-bindgen)
+wasm = ["wasm-bindgen", "tsify"]
 
 [dependencies]
 morpheum-primitives = { workspace = true }
@@ -25,8 +28,10 @@ thiserror = { workspace = true }
 zeroize = { workspace = true }
 secrecy = { workspace = true }
 async-trait = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 
-# WASM support
+# WASM support (optional)
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true, optional = true }
 tsify = { workspace = true, optional = true }

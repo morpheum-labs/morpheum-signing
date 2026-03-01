@@ -1,12 +1,7 @@
 //! Error types for the morpheum-signing library.
-//! Designed for maximum clarity, no_std compatibility, and production use.
+//!
+//! Designed for maximum clarity and production use.
 //! All errors are unified under a single `SigningError` for clean APIs.
-
-#![cfg_attr(not(feature = "std"), no_std)]
-
-use core::fmt;
-#[cfg(feature = "std")]
-use std::error::Error as StdError;
 
 use thiserror::Error;
 
@@ -23,26 +18,32 @@ pub enum SigningError {
     #[error("invalid key or mnemonic: {0}")]
     InvalidKey(String),
 
-    /// Injected wallet (MetaMask, Phantom, etc.) rejected the request or failed to respond.
+    /// Injected wallet (`MetaMask`, Phantom, etc.) rejected the request or failed to respond.
     #[error("wallet adapter rejected or failed: {0}")]
     WalletAdapter(String),
 
-    /// Nonce provider (Sentry or AgentPortal) failed to return a valid nonce.
+    /// Nonce provider (Sentry or `AgentPortal`) failed to return a valid nonce.
     #[error("nonce provider failed: {0}")]
     Nonce(#[from] NonceError),
 
-    /// Failed to map an external chain address (0x..., sol..., bc1p...) to a Morpheum AccountId.
+    /// Failed to map an external chain address (0x..., sol..., bc1p...) to a Morpheum `AccountId`.
     #[error("address mapping failed for '{address}': {reason}")]
     AddressMapping {
+        /// The address that failed to map.
         address: String,
+        /// Human-readable reason for the failure.
         reason: String,
     },
 
-    /// Failed to serialize or deserialize protobuf messages (Tx, SignDoc, Any, etc.).
-    #[error("protobuf error: {0}")]
-    Proto(#[from] prost::EncodeError), // also covers DecodeError via From
+    /// Failed to encode a protobuf message.
+    #[error("protobuf encode error: {0}")]
+    ProtoEncode(#[from] prost::EncodeError),
 
-    /// VC / TradingKey claim is invalid or expired.
+    /// Failed to decode a protobuf message.
+    #[error("protobuf decode error: {0}")]
+    ProtoDecode(#[from] prost::DecodeError),
+
+    /// VC / `TradingKey` claim is invalid or expired.
     #[error("invalid VC or TradingKey claim: {0}")]
     InvalidClaim(String),
 
@@ -64,18 +65,23 @@ pub enum SigningError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum CryptoError {
+    /// Ed25519 operation failed.
     #[error("ed25519 error: {0}")]
     Ed25519(String),
 
+    /// Secp256k1 operation failed.
     #[error("secp256k1 error: {0}")]
     Secp256k1(String),
 
+    /// Public key has an invalid length.
     #[error("invalid public key length")]
     InvalidPublicKeyLength,
 
+    /// Signature verification did not succeed.
     #[error("signature verification failed")]
     SignatureVerificationFailed,
 
+    /// The curve is not supported for this operation.
     #[error("unsupported curve for this operation")]
     UnsupportedCurve,
 }
@@ -84,57 +90,44 @@ pub enum CryptoError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum NonceError {
+    /// Network or service call to fetch nonce failed.
     #[error("failed to fetch nonce from node: {0}")]
     FetchFailed(String),
 
+    /// Response from the nonce provider was malformed.
     #[error("invalid nonce response from node")]
     InvalidResponse,
 
+    /// Nonce was already consumed or too old (replay attempt).
     #[error("nonce too old or replay detected")]
     ReplayDetected,
 }
 
-// Automatic std::error::Error impl when std is enabled
-#[cfg(feature = "std")]
-impl StdError for SigningError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            Self::Crypto(e) => Some(e),
-            Self::Nonce(e) => Some(e),
-            Self::Proto(e) => Some(e),
-            #[cfg(feature = "std")]
-            Self::Io(e) => Some(e),
-            _ => None,
-        }
-    }
-}
+// ==================== CONVENIENCE CONSTRUCTORS ====================
 
-#[cfg(feature = "std")]
-impl StdError for CryptoError {}
-#[cfg(feature = "std")]
-impl StdError for NonceError {}
-
-// Convenience constructors (keeps code DRY)
 impl SigningError {
+    /// Create an `InvalidKey` error.
     pub fn invalid_key(msg: impl Into<String>) -> Self {
         Self::InvalidKey(msg.into())
     }
 
+    /// Create a `WalletAdapter` error.
     pub fn wallet_adapter(msg: impl Into<String>) -> Self {
         Self::WalletAdapter(msg.into())
     }
 
+    /// Create a `Signing` error.
     pub fn signing(msg: impl Into<String>) -> Self {
         Self::Signing(msg.into())
     }
 
+    /// Create a `Custom` error.
     pub fn custom(msg: impl Into<String>) -> Self {
         Self::Custom(msg.into())
     }
-}
 
-impl From<prost::DecodeError> for SigningError {
-    fn from(err: prost::DecodeError) -> Self {
-        Self::Proto(prost::EncodeError::from(err)) // reuse via From<EncodeError> chain
+    /// Create an `InvalidClaim` error.
+    pub fn invalid_claim(msg: impl Into<String>) -> Self {
+        Self::InvalidClaim(msg.into())
     }
 }

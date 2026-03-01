@@ -1,18 +1,26 @@
-//! WASM Bindings — All JavaScript/TypeScript interop code.
+//! WASM Bindings — All JavaScript/TypeScript interop for the browser.
 //!
-//! This file contains all `#[wasm_bindgen]` exports and TypeScript definitions.
-//! It keeps the main `lib.rs` clean and focused on Rust logic.
+//! This file contains **all** `#[wasm_bindgen]` exports and rich TypeScript definitions.
+//! The signing crate remains **completely generic** — no knowledge of any specific module messages.
+//! Messages are added exclusively as raw `prost_types::Any` (type_url + bytes) from JavaScript/TS.
 //!
-//! Build with: `wasm-pack build --target web --release`
+//! **Architecture**:
+//! - Factory methods for the three major injected wallets (MetaMask, Phantom, Taproot).
+//! - `TxBuilderWasm` remains fully generic and uses the `WalletAdapter` trait under the hood.
+//! - All wallet-specific logic (JS interop) is cleanly encapsulated.
+//! - Excellent TypeScript DX with full type safety and JSDoc.
+//! - Production-ready: robust error handling, zero-copy where possible, clear messages.
 
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 use tsify::Tsify;
-use serde::{Deserialize, Serialize};
+use serde_wasm_bindgen;
 
 use crate::core::{
     prelude::*,
     TxBuilder as CoreTxBuilder,
-    HumanSigner,
+    SigningError,
+    SignedTx,
 };
 
 // ==================== PANIC HOOK FOR BETTER BROWSER DEBUGGING ====================
@@ -31,53 +39,89 @@ pub fn version() -> String {
 
 // ==================== MAIN TX BUILDER FOR BROWSER ====================
 
-/// WASM wrapper around `TxBuilder` for browser use.
+/// WASM-friendly transaction builder for browser frontends (React, Vue, Svelte, Next.js, etc.).
 ///
-/// This is the primary class exposed to TypeScript/React/Vue/etc.
+/// **Completely generic** — messages are added via `add_message(type_url, value)`.
+/// Use the factory methods (`new_metamask()`, `new_phantom()`, `new_taproot()`) for injected wallets.
 #[wasm_bindgen]
-#[derive(Debug)]
 pub struct TxBuilderWasm {
-    inner: CoreTxBuilder<HumanSigner>, // Default human signer; agent support added via methods
+    inner: CoreTxBuilder<Box<dyn Signer>>,
 }
 
 #[wasm_bindgen]
 impl TxBuilderWasm {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        // Use a dummy signer for construction; real signer is set via methods
-        let dummy_signer = HumanSigner::from_seed(&[0u8; 32]);
+    // ==================== FACTORY METHODS ====================
+
+    /// Creates a builder backed by **MetaMask** (or any EVM injected wallet).
+    #[wasm_bindgen(js_name = "newMetamask")]
+    pub fn new_metamask() -> Self {
+        let adapter = Box::new(MetaMaskAdapterWasm::new()) as Box<dyn Signer>;
         Self {
-            inner: CoreTxBuilder::human(dummy_signer),
+            inner: CoreTxBuilder::new(adapter),
         }
     }
 
+    /// Creates a builder backed by **Phantom** (or any Solana injected wallet).
+    #[wasm_bindgen(js_name = "newPhantom")]
+    pub fn new_phantom() -> Self {
+        let adapter = Box::new(PhantomAdapterWasm::new()) as Box<dyn Signer>;
+        Self {
+            inner: CoreTxBuilder::new(adapter),
+        }
+    }
+
+    /// Creates a builder backed by **Unisat / Leather / Xverse** (Bitcoin Taproot).
+    #[wasm_bindgen(js_name = "newTaproot")]
+    pub fn new_taproot() -> Self {
+        let adapter = Box::new(TaprootAdapterWasm::new()) as Box<dyn Signer>;
+        Self {
+            inner: CoreTxBuilder::new(adapter),
+        }
+    }
+
+    // ==================== BUILDER METHODS ====================
+
+    /// Sets the chain ID.
     #[wasm_bindgen]
     pub fn chain_id(mut self, chain_id: String) -> TxBuilderWasm {
         self.inner = self.inner.chain_id(chain_id);
         self
     }
 
+    /// Sets an optional memo.
     #[wasm_bindgen]
     pub fn memo(mut self, memo: String) -> TxBuilderWasm {
         self.inner = self.inner.memo(memo);
         self
     }
 
+    /// Sets timeout in seconds since epoch.
     #[wasm_bindgen]
-    pub fn create_market(mut self, name: String) -> TxBuilderWasm {
-        // In full production: convert JS object to MsgCreateMarketRequest
-        log(&format!("Adding CreateMarket: {}", name));
-        // Placeholder for real message packing
+    pub fn timeout_seconds(mut self, seconds: u64) -> TxBuilderWasm {
+        self.inner = self.inner.timeout_seconds(seconds);
         self
     }
 
-    /// Final signing call — returns a promise in JS/TS.
+    /// **Generic message adder** — the only way to add messages.
+    /// Pass the protobuf type URL and a plain JavaScript object.
+    #[wasm_bindgen]
+    pub fn add_message(mut self, type_url: String, value: JsValue) -> Result<TxBuilderWasm, JsValue> {
+        let bytes: Vec<u8> = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| JsValue::from_str(&format!("Serialization failed: {}", e)))?;
+
+        let any = prost_types::Any { type_url, value: bytes };
+
+        self.inner = self.inner.add_message(any);
+        Ok(self)
+    }
+
+    /// Final signing call — returns a Promise that resolves to `SignedTx`.
     #[wasm_bindgen]
     pub async fn sign(self) -> Result<JsValue, JsValue> {
         match self.inner.sign().await {
             Ok(signed_tx) => {
                 let serialized = serde_wasm_bindgen::to_value(&signed_tx)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                    .map_err(|e| JsValue::from_str(&format!("Serialization failed: {}", e)))?;
                 Ok(serialized)
             }
             Err(e) => Err(JsValue::from_str(&e.to_string())),
@@ -85,31 +129,40 @@ impl TxBuilderWasm {
     }
 }
 
-// ==================== TYPE DEFINITIONS FOR PERFECT TYPESCRIPT DX ====================
+// ==================== RICH TYPESCRIPT DEFINITIONS ====================
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
 export interface SignedTx {
     tx: any;                    // Full tx.v1.Tx
-    raw_bytes: Uint8Array;      // Serialized TxRaw for broadcast
-    tx_raw?: any;               // Optional TxRaw for debugging
-    txhash?: string;            // Computed sha256 hex (added in native)
-}
-
-export interface SigningOptions {
-    deadline_seconds?: number;
-    memo?: string;
-    include_timestamp: boolean;
+    raw_bytes: Uint8Array;      // Ready for broadcast
+    tx_raw?: any;               // Optional TxRaw
+    txhash?: string;            // sha256 hex of raw_bytes
 }
 
 /**
- * Main builder class exposed to TypeScript.
+ * Main builder for browser use.
+ * Completely generic — messages added via add_message().
  */
 export class TxBuilderWasm {
-    constructor();
+    private constructor();
+
+    /** MetaMask / Rabby / Ledger (EVM) */
+    static newMetamask(): TxBuilderWasm;
+
+    /** Phantom / Solflare / Backpack (Solana) */
+    static newPhantom(): TxBuilderWasm;
+
+    /** Unisat / Leather / Xverse (Bitcoin Taproot) */
+    static newTaproot(): TxBuilderWasm;
+
     chain_id(chain_id: string): TxBuilderWasm;
     memo(memo: string): TxBuilderWasm;
-    create_market(name: string): TxBuilderWasm;
+    timeout_seconds(seconds: number): TxBuilderWasm;
+
+    /** Add any protobuf message (completely generic) */
+    add_message(type_url: string, value: any): Promise<TxBuilderWasm>;
+
     sign(): Promise<SignedTx>;
 }
 "#;
