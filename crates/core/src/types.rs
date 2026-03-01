@@ -3,15 +3,40 @@
 //! This crate is deliberately `no_std` + minimal to support WASM and embedded use.
 //! All protobuf types come exclusively from the published morpheum-primitives crate.
 
-#![cfg_attr(not(feature = "std"), no_std)]
-
 use core::fmt;
-use prost::Message;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::proto::tx::v1 as tx;
+
+/// Serde helper: serializes fixed-size byte arrays as hex strings.
+///
+/// This avoids the limitation where `serde` / `serde_core` does not provide
+/// blanket `Serialize` / `Deserialize` impls for arrays of length > 32.
+/// Using hex encoding also produces human-readable output, which is the
+/// standard format for cryptographic keys and signatures.
+mod hex_bytes {
+    use alloc::string::String;
+    use alloc::vec::Vec;
+    use serde::{de, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer, const N: usize>(
+        bytes: &[u8; N],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&hex::encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
+        deserializer: D,
+    ) -> Result<[u8; N], D::Error> {
+        let hex_str = String::deserialize(deserializer)?;
+        let v: Vec<u8> = hex::decode(&hex_str).map_err(de::Error::custom)?;
+        v.try_into()
+            .map_err(|_| de::Error::custom("incorrect byte length"))
+    }
+}
 
 /// Re-export all core protobuf types from primitives (proto-centric).
 pub use tx::{
@@ -99,13 +124,13 @@ impl Address {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PublicKey {
     /// Ed25519 32-byte public key (Native + Agent TradingKey).
-    Ed25519([u8; 32]),
+    Ed25519(#[serde(with = "hex_bytes")] [u8; 32]),
     /// Secp256k1 compressed public key (33 bytes) — EVM / MetaMask.
-    Secp256k1([u8; 33]),
+    Secp256k1(#[serde(with = "hex_bytes")] [u8; 33]),
     /// BIP-340 Schnorr X-only public key (32 bytes) — Bitcoin Taproot.
-    Schnorr([u8; 32]),
+    Schnorr(#[serde(with = "hex_bytes")] [u8; 32]),
     /// Agent key (alias to Ed25519 for clarity).
-    Agent([u8; 32]),
+    Agent(#[serde(with = "hex_bytes")] [u8; 32]),
 }
 
 impl PublicKey {
@@ -127,11 +152,29 @@ impl PublicKey {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Signature {
     /// Ed25519 64-byte signature.
-    Ed25519([u8; 64]),
+    Ed25519(#[serde(with = "hex_bytes")] [u8; 64]),
     /// Secp256k1 64-byte signature (or 65-byte recoverable).
-    Secp256k1([u8; 64]),
+    Secp256k1(#[serde(with = "hex_bytes")] [u8; 64]),
     /// BIP-340 Schnorr 64-byte signature (Bitcoin Taproot).
-    Schnorr([u8; 64]),
+    Schnorr(#[serde(with = "hex_bytes")] [u8; 64]),
+}
+
+impl Signature {
+    /// Returns the raw signature bytes as a `Vec<u8>`.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Ed25519(b) | Self::Secp256k1(b) | Self::Schnorr(b) => b.to_vec(),
+        }
+    }
+
+    /// Returns `true` if every byte of the signature is zero (i.e. unset).
+    #[must_use]
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Ed25519(b) | Self::Secp256k1(b) | Self::Schnorr(b) => b.iter().all(|&x| x == 0),
+        }
+    }
 }
 
 impl Zeroize for Signature {
@@ -156,21 +199,25 @@ pub struct SignedTx {
 }
 
 impl SignedTx {
+    /// Creates a new [`SignedTx`] from its constituent parts.
     #[must_use]
     pub const fn new(tx: Tx, raw_bytes: Vec<u8>, tx_raw: Option<TxRaw>) -> Self {
         Self { tx, raw_bytes, tx_raw }
     }
 
+    /// Returns a reference to the decoded transaction.
     #[must_use]
     pub const fn tx(&self) -> &Tx {
         &self.tx
     }
 
+    /// Returns the raw signed bytes (for broadcast).
     #[must_use]
     pub fn raw_bytes(&self) -> &[u8] {
         &self.raw_bytes
     }
 
+    /// Returns the optional `TxRaw` (for verification/debugging).
     #[must_use]
     pub const fn tx_raw(&self) -> Option<&TxRaw> {
         self.tx_raw.as_ref()
@@ -186,35 +233,37 @@ impl SignedTx {
 }
 
 /// Helper for building messages as `Any` (used in `TxBuilder`).
-pub trait IntoAny: Message {
-    fn type_url() -> String;
-
+///
+/// Blanket-implemented for every type that implements [`prost::Name`],
+/// which provides the canonical `type_url()` and `full_name()`.
+pub trait IntoAny: prost::Name {
+    /// Packs `self` into a [`prost_types::Any`] with the canonical type URL.
     fn into_any(self) -> Any
     where
         Self: Sized,
     {
         Any {
-            type_url: Self::type_url(),
+            type_url: <Self as prost::Name>::type_url(),
             value: self.encode_to_vec(),
         }
     }
 }
 
-impl<T: Message> IntoAny for T {
-    fn type_url() -> String {
-        format!("type.googleapis.com/{}", <Self as Message>::NAME)
-    }
-}
+impl<T: prost::Name> IntoAny for T {}
 
 /// Signing options (Morpheum extension).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SigningOptions {
+    /// Optional deadline in seconds (after which the tx is invalid).
     pub deadline_seconds: Option<u64>,
+    /// Optional memo to include in the transaction.
     pub memo: Option<String>,
+    /// Whether to include a timestamp in the `SignerInfo`.
     pub include_timestamp: bool,
 }
 
 impl SigningOptions {
+    /// Creates a new [`SigningOptions`] with default values.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

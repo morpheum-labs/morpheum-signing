@@ -15,16 +15,9 @@ mod evm;
 mod solana;
 mod bitcoin;
 
-// Re-exports
+// Re-exports (short aliases are defined in lib.rs for top-level ergonomics)
 pub use native::NativeSigner;
 pub use agent::AgentSigner;
 pub use evm::EvmSigner;
 pub use solana::SolanaSigner;
 pub use bitcoin::BitcoinSigner;
-
-// Short aliases (recommended for daily use)
-pub type Native = NativeSigner;
-pub type Agent = AgentSigner;
-pub type Evm = EvmSigner;
-pub type Solana = SolanaSigner;
-pub type Bitcoin = BitcoinSigner;

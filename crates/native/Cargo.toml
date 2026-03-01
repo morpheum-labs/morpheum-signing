@@ -20,6 +20,12 @@ ed25519-dalek = { workspace = true, optional = true }
 k256 = { workspace = true, optional = true }
 bitcoin = { workspace = true, optional = true }
 
+# Protobuf (for Message::encode_to_vec in signers)
+prost = { workspace = true }
+
+# Hashing (for BIP-340 Schnorr message digests)
+sha2 = { workspace = true }
+
 # Security & serialization
 zeroize = { workspace = true }
 secrecy = { workspace = true }

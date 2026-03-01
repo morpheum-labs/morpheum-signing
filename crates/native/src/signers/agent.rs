@@ -5,8 +5,9 @@
 //! for fine-grained delegation and nonce sub-range isolation.
 
 use async_trait::async_trait;
-use ed25519_dalek::{Signer as DalekSigner, SigningKey, VerifyingKey};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use ed25519_dalek::{Signer as DalekSigner, SigningKey};
+use prost::Message;
+use zeroize::ZeroizeOnDrop;
 
 use morpheum_signing_core::{
     claim::TradingKeyClaim,
@@ -26,6 +27,8 @@ pub struct AgentSigner {
     /// The canonical AgentId (from identity registration).
     agent_id: AccountId,
     /// Optional TradingKeyClaim (for delegation, limits, and nonce sub-range).
+    /// Embedded in `Tx.AuthInfo` during signing and validated by `auth::NonceHotPath`.
+    #[allow(dead_code)]
     claim: Option<TradingKeyClaim>,
 }
 
@@ -73,13 +76,6 @@ impl Signer for AgentSigner {
     }
 }
 
-impl Drop for AgentSigner {
-    fn drop(&mut self) {
-        self.trading_key.zeroize();
-        if let Some(claim) = &mut self.claim {
-            claim.signature.0.zeroize();
-        }
-    }
-}
-
+// `ed25519_dalek::SigningKey` handles its own zeroization on `Drop`.
+// `TradingKeyClaim` fields (signature bytes) implement `Zeroize` via the `Signature` enum.
 impl ZeroizeOnDrop for AgentSigner {}

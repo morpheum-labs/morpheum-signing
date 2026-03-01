@@ -14,7 +14,7 @@ crate-type = ["lib"]
 [features]
 default = []
 # Enables std support (required for native and some WASM features)
-std = ["prost/std", "zeroize/std", "secrecy/std"]
+std = ["prost/std", "zeroize/std"]
 # Enables WASM-specific bindings (tsify, wasm-bindgen)
 wasm = ["wasm-bindgen", "tsify"]
 

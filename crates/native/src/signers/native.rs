@@ -9,13 +9,14 @@
 
 use async_trait::async_trait;
 use ed25519_dalek::{Signer as DalekSigner, SigningKey, VerifyingKey};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use prost::Message;
+use zeroize::ZeroizeOnDrop;
 
 use morpheum_signing_core::{
     error::SigningError,
     proto::tx::v1::SignDoc,
     signer::Signer,
-    types::{AccountId, PublicKey, Signature, WalletType},
+    types::{PublicKey, Signature, WalletType},
 };
 
 /// Local ed25519 signer for Morpheum native accounts.
@@ -54,10 +55,6 @@ impl Signer for NativeSigner {
     }
 }
 
-impl Drop for NativeSigner {
-    fn drop(&mut self) {
-        self.signing_key.zeroize();
-    }
-}
-
+// `ed25519_dalek::SigningKey` implements `Drop` which zeroizes secret material,
+// so no manual `Zeroize` call is needed — just propagate the trait marker.
 impl ZeroizeOnDrop for NativeSigner {}

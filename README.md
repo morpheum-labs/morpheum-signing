@@ -13,14 +13,14 @@ Sign transactions from **MetaMask, Phantom, Taproot, native keys**, and **Tradin
 
 ## ✨ Features
 
-- **Unified API** — One `TxBuilder` for all use cases
+- **Unified API** — One `TxBuilder` for all signing scenarios
 - **Multi-chain support** — Native, EVM (MetaMask), Solana (Phantom), Bitcoin Taproot
-- **Agent-first design** — `AgentSigner` with `TradingKeyClaim` and isolated nonce sub-ranges (unlimited parallelism)
 - **Native-first** — `NativeSigner` for Morpheum's native ed25519 accounts
+- **Agent-first** — `AgentSigner` with `TradingKeyClaim` and isolated nonce sub-ranges (unlimited parallelism)
 - **Dual target** — Native Rust (CLI, bots, agents) + WASM/TypeScript (browser frontends)
 - **Proto-centric** — Produces exact Morpheum `Tx`, `SignDoc`, `TxRaw`, `Nonce`
 - **Zero-copy & secure** — `zeroize`, `secrecy`, `no_std` core
-- **Production ready** — Full test suite, excellent examples, clear error messages
+- **Production ready** — Comprehensive tests, clean examples, excellent error messages
 
 ---
 
@@ -44,7 +44,7 @@ npm install @morpheum/signing
 
 ## 🚀 Quick Start
 
-### Native (Morpheum native signer)
+### Native (Recommended for most humans)
 
 ```rust
 use morpheum_signing_native::prelude::*;
@@ -104,7 +104,7 @@ const signedTx = await TxBuilderWasm.newPhantom()
 
 ## 📖 Examples
 
-- `examples/native.rs` — Native Morpheum signer (recommended for most humans)
+- `examples/native.rs` — Native Morpheum signer (recommended for humans)
 - `examples/native_agent.rs` — AI Agent with TradingKey + VC claim
 - `examples/browser_metamask.ts` — Browser MetaMask / EVM
 - `examples/browser_phantom.ts` — Browser Phantom / Solana
@@ -138,18 +138,18 @@ wasm-pack build --target web --release
 
 ---
 
-## Supported Wallets & Chains
+## Supported Signers & Wallets
 
-| Signer / Wallet     | Chain      | Type                  | Recommended Use Case       |
-|---------------------|------------|-----------------------|----------------------------|
-| `NativeSigner`      | Morpheum   | Local ed25519         | Humans with native keys    |
-| `AgentSigner`       | Morpheum   | TradingKey + VC       | Autonomous AI agents       |
-| MetaMaskAdapter     | EVM        | Injected              | Browser dApps              |
-| PhantomAdapter      | Solana     | Injected              | Browser Solana dApps       |
-| TaprootAdapter      | Bitcoin    | Injected (Unisat etc.)| Taproot / Bitcoin flows    |
-| EvmSigner           | EVM        | Local secp256k1       | Headless EVM signing       |
-| SolanaSigner        | Solana     | Local ed25519         | Headless Solana signing    |
-| BitcoinSigner       | Bitcoin    | Local BIP-340         | Headless Taproot signing   |
+| Signer / Wallet       | Chain      | Type                  | Recommended For             |
+|-----------------------|------------|-----------------------|-----------------------------|
+| `NativeSigner`        | Morpheum   | Local ed25519         | Humans with native keys     |
+| `AgentSigner`         | Morpheum   | TradingKey + VC       | Autonomous AI agents        |
+| `MetaMaskAdapter`     | EVM        | Injected              | Browser EVM dApps           |
+| `PhantomAdapter`      | Solana     | Injected              | Browser Solana dApps        |
+| `TaprootAdapter`      | Bitcoin    | Injected              | Unisat / Leather / Xverse   |
+| `EvmSigner`           | EVM        | Local secp256k1       | Headless EVM signing        |
+| `SolanaSigner`        | Solana     | Local ed25519         | Headless Solana signing     |
+| `BitcoinSigner`       | Bitcoin    | Local BIP-340         | Headless Taproot signing    |
 
 ---
 
@@ -157,7 +157,7 @@ wasm-pack build --target web --release
 
 - `core/` — `no_std` core (traits, types, generic `TxBuilder`)
 - `native/` — Concrete signers, adapters, and nonce providers for Rust
-- `wasm/` — Browser + TypeScript bindings with clean factory methods
+- `wasm/` — Browser + TypeScript bindings with clean factory methods (`newMetamask()`, `newPhantom()`, `newTaproot()`)
 
 ---
 

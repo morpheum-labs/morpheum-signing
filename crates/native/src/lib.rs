@@ -25,8 +25,11 @@ pub use morpheum_signing_core::*;
 // ==================== MODULES ====================
 
 mod signers;
-mod adapters;
 mod providers;
+
+// Browser wallet adapters are WASM-only (js_sys / wasm_bindgen interop).
+#[cfg(target_arch = "wasm32")]
+mod adapters;
 
 // ==================== SIGNERS (Local Keypairs) ====================
 
@@ -38,24 +41,31 @@ pub use signers::{
     BitcoinSigner,
 };
 
-// Short, idiomatic aliases
+/// Short alias for [`NativeSigner`].
 pub type Native = NativeSigner;
+/// Short alias for [`AgentSigner`].
 pub type Agent = AgentSigner;
+/// Short alias for [`EvmSigner`].
 pub type Evm = EvmSigner;
+/// Short alias for [`SolanaSigner`].
 pub type Solana = SolanaSigner;
+/// Short alias for [`BitcoinSigner`].
 pub type Bitcoin = BitcoinSigner;
 
-// ==================== ADAPTERS (Injected Wallets) ====================
+// ==================== ADAPTERS (Injected Wallets — WASM only) ====================
 
+#[cfg(target_arch = "wasm32")]
 pub use adapters::{
     MetaMaskAdapter,
     PhantomAdapter,
     TaprootAdapter,
 };
 
-// Short aliases
+#[cfg(target_arch = "wasm32")]
 pub type MetaMask = MetaMaskAdapter;
+#[cfg(target_arch = "wasm32")]
 pub type Phantom = PhantomAdapter;
+#[cfg(target_arch = "wasm32")]
 pub type Taproot = TaprootAdapter;
 
 // ==================== PROVIDERS (Nonce Strategies) ====================
@@ -66,9 +76,11 @@ pub use providers::{
     PortalNonceProvider,
 };
 
+/// Short alias for [`SentryNonceProvider`].
 #[cfg(feature = "http")]
 pub type Sentry = SentryNonceProvider;
 
+/// Short alias for [`PortalNonceProvider`].
 #[cfg(feature = "http")]
 pub type Portal = PortalNonceProvider;
 
@@ -118,7 +130,8 @@ pub mod prelude {
         Native, Agent, Evm, Solana, Bitcoin,
     };
 
-    // Adapters
+    // Adapters (WASM only)
+    #[cfg(target_arch = "wasm32")]
     pub use super::{
         MetaMaskAdapter, PhantomAdapter, TaprootAdapter,
         MetaMask, Phantom, Taproot,

@@ -20,8 +20,9 @@
 use async_trait::async_trait;
 use bitcoin::secp256k1::{
     schnorr::Signature as SchnorrSignature,
-    Keypair, Message, Secp256k1,
+    Keypair, Message as Secp256k1Message, Secp256k1,
 };
+use prost::Message;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -29,7 +30,7 @@ use morpheum_signing_core::{
     error::SigningError,
     proto::tx::v1::SignDoc,
     signer::Signer,
-    types::{AccountId, PublicKey, Signature, WalletType},
+    types::{PublicKey, Signature, WalletType},
 };
 
 /// Local BIP-340 Schnorr signer for Bitcoin Taproot.
@@ -75,9 +76,10 @@ impl Signer for BitcoinSigner {
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
         let hash = Sha256::digest(bytes);
-        let message = Message::from_digest(hash.into());
+        let message = Secp256k1Message::from_digest(hash.into());
 
-        let sig: SchnorrSignature = self.keypair.sign_schnorr(message);
+        let secp = Secp256k1::new();
+        let sig: SchnorrSignature = secp.sign_schnorr_no_aux_rand(&message, &self.keypair);
 
         Ok(Signature::Schnorr(sig.serialize()))
     }

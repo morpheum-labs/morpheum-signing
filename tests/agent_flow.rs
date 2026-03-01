@@ -1,8 +1,8 @@
 //! Agent signer flow tests (TradingKey + VC claim with isolated nonce sub-range).
 //!
 //! This test verifies the full agent signing flow using `AgentSigner` and the
-//! `agent()` builder. It demonstrates VC delegation, nonce sub-range isolation,
-//! and uses only the fully generic API (`add_message` with `prost_types::Any`).
+//! `agent()` builder. It demonstrates VC delegation, nonce sub-range isolation
+//! for parallelism, and uses only the fully generic API (`add_message` with `prost_types::Any`).
 
 use super::common::*;
 use morpheum_signing_native::prelude::*;
@@ -27,7 +27,7 @@ pub async fn test_agent_signing_flow() {
     };
 
     // 3. Build and sign using only the generic fluent API
-    let signed_tx = agent(signer)                     // ← Agent builder
+    let signed_tx = agent(signer)
         .chain_id("morpheum-test-1")
         .memo("Agent integration test with TradingKey + VC")
         .add_message(market_any)
@@ -39,7 +39,7 @@ pub async fn test_agent_signing_flow() {
     // 4. Assertions
     assert!(!signed_tx.raw_bytes.is_empty(), "Signed tx should not be empty");
 
-    // Agent flow should use the nonce sub-range from the claim
+    // Agent flow should use the nonce sub-range from the TradingKeyClaim
     assert_eq!(
         signed_tx.tx.nonce.as_ref().map_or(0, |n| n.sub),
         1000,

@@ -29,17 +29,8 @@
 pub mod sentry;
 pub mod portal;
 
-// Public re-exports (feature-gated to match the providers' own requirements)
+// Public re-exports (feature-gated; short aliases are in lib.rs)
 #[cfg(feature = "http")]
 pub use sentry::SentryNonceProvider;
 #[cfg(feature = "http")]
 pub use portal::PortalNonceProvider;
-
-// Convenience type aliases (matching the exact style used in signers/ and adapters/)
-#[cfg(feature = "http")]
-pub type Sentry = SentryNonceProvider;
-#[cfg(feature = "http")]
-pub type Portal = PortalNonceProvider;
-
-/// Re-export the core trait for ergonomic imports when implementing custom providers.
-pub use morpheum_signing_core::nonce::NonceProvider;

@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use crate::{
     error::SigningError,
-    proto::SignDoc,
+    proto::tx::v1::SignDoc,
     types::{Address, Signature, WalletType},
 };
 

@@ -9,6 +9,8 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use prost::Message;
+
 use crate::{
     claim::TradingKeyClaim,
     error::SigningError,
@@ -18,15 +20,14 @@ use crate::{
         self as tx, AuthInfo, ModeInfo, Nonce, SignDoc, SignerInfo, Tx, TxBody, TxRaw,
     },
     signer::Signer,
-    types::{AccountId, PublicKey, Signature, SignedTx, SigningOptions, WalletType},
-    wallet_adapter::BoxedWalletAdapter,
+    types::{SignedTx, SigningOptions},
+    wallet_adapter::{BoxedWalletAdapter, WalletAdapter},
 };
 
 /// Fluent transaction builder (completely generic).
 ///
 /// Generic over the signer to allow zero-cost monomorphization for local keys
 /// while supporting dynamic dispatch for injected wallets.
-#[derive(Debug)]
 pub struct TxBuilder<S: Signer> {
     signer: S,
     chain_id: String,
@@ -36,9 +37,24 @@ pub struct TxBuilder<S: Signer> {
     messages: Vec<prost_types::Any>, // ← ONLY generic Any
     signing_options: SigningOptions,
     nonce_provider: Option<BoxedNonceProvider>,
+    #[allow(dead_code)]
     address_mapper: Box<dyn AddressMapper>,
     wallet_adapter: Option<BoxedWalletAdapter>,
     trading_key_claim: Option<TradingKeyClaim>,
+}
+
+impl<S: Signer + fmt::Debug> fmt::Debug for TxBuilder<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TxBuilder")
+            .field("signer", &self.signer)
+            .field("chain_id", &self.chain_id)
+            .field("account_number", &self.account_number)
+            .field("memo", &self.memo)
+            .field("timeout_timestamp", &self.timeout_timestamp)
+            .field("messages", &self.messages)
+            .field("signing_options", &self.signing_options)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<S: Signer> TxBuilder<S> {
@@ -149,7 +165,7 @@ impl<S: Signer> TxBuilder<S> {
     /// Builds and signs the transaction.
     ///
     /// This is the only method that performs the actual signing and nonce fetching.
-    pub async fn sign(mut self) -> Result<SignedTx, SigningError> {
+    pub async fn sign(self) -> Result<SignedTx, SigningError> {
         // 1. Resolve nonce
         let nonce = if let Some(provider) = &self.nonce_provider {
             provider.next_nonce(&self.signer.account_id()).await?
@@ -180,7 +196,7 @@ impl<S: Signer> TxBuilder<S> {
             }),
             mode_info: Some(ModeInfo {
                 sum: Some(tx::mode_info::Sum::Single(tx::mode_info::Single {
-                    mode: tx::SignMode::SignModeDirect as i32,
+                    mode: tx::SignMode::Ed25519 as i32,
                 })),
             }),
             chain_type: 0, // filled by primitives layer if needed
@@ -193,57 +209,49 @@ impl<S: Signer> TxBuilder<S> {
             signer_infos: vec![signer_info],
         };
 
-        // 4. Build SignDoc (the exact bytes that get signed)
+        // 4. Encode body + auth_info once (reused in SignDoc and TxRaw)
+        let body_bytes = body.encode_to_vec();
+        let auth_info_bytes = auth_info.encode_to_vec();
+
+        // 5. Build SignDoc (the exact bytes that get signed)
         let sign_doc = SignDoc {
-            body_bytes: body.encode_to_vec(),
-            auth_info_bytes: auth_info.encode_to_vec(),
+            body_bytes: body_bytes.clone(),
+            auth_info_bytes: auth_info_bytes.clone(),
             chain_id: self.chain_id,
             account_number: self.account_number.unwrap_or(0),
         };
 
-        // 5. Perform signing
+        // 6. Perform signing
         let signature = self.signer.sign(&sign_doc).await?;
+        let sig_bytes = signature.to_bytes();
 
-        // 6. Validate TradingKeyClaim if present
+        // 7. Validate TradingKeyClaim if present (requires std for wall-clock time)
+        #[cfg(feature = "std")]
         if let Some(ref claim) = self.trading_key_claim {
-            let now_secs = core::time::SystemTime::now()
-                .duration_since(core::time::UNIX_EPOCH)
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             claim.validate(now_secs)?;
         }
 
-        // 7. Build TxRaw and Tx
+        // 8. Build TxRaw and Tx
         let tx_raw = TxRaw {
-            body_bytes: body.encode_to_vec(),
-            auth_info_bytes: auth_info.encode_to_vec(),
-            signatures: vec![signature.0.clone()],
-        };
-
-        let tx = Tx {
-            body: Some(body),
-            auth_info: Some(auth_info),
-            signatures: vec![signature.0],
-            nonce: Some(nonce),
-            shard_id: None,
+            body_bytes,
+            auth_info_bytes,
+            signatures: vec![sig_bytes.clone()],
         };
 
         let raw_bytes = tx_raw.encode_to_vec();
 
+        let tx = Tx {
+            body: Some(body),
+            auth_info: Some(auth_info),
+            signatures: vec![sig_bytes],
+            nonce: Some(nonce),
+            shard_id: None,
+        };
+
         Ok(SignedTx::new(tx, raw_bytes, Some(tx_raw)))
-    }
-}
-
-// ==================== CONVENIENCE CONSTRUCTORS ====================
-
-impl TxBuilder<crate::signer::HumanSigner> {
-    pub fn human(signer: crate::signer::HumanSigner) -> Self {
-        Self::new(signer)
-    }
-}
-
-impl TxBuilder<crate::signer::AgentSigner> {
-    pub fn agent(signer: crate::signer::AgentSigner) -> Self {
-        Self::new(signer)
     }
 }

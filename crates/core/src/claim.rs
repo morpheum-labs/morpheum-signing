@@ -55,7 +55,7 @@ impl TradingKeyClaim {
         if self.nonce_sub_range_start >= self.nonce_sub_range_end {
             return Err(SigningError::invalid_claim("invalid nonce sub-range"));
         }
-        if self.signature.0.is_empty() {
+        if self.signature.is_zero() {
             return Err(SigningError::invalid_claim("missing signature"));
         }
         Ok(())
@@ -101,15 +101,15 @@ impl VcClaimBuilder {
     }
 
     /// Sets the issuer `AccountId`.
-    #[must_use] 
-    pub const fn issuer(mut self, issuer: AccountId) -> Self {
+    #[must_use]
+    pub fn issuer(mut self, issuer: AccountId) -> Self {
         self.issuer = Some(issuer);
         self
     }
 
     /// Sets the subject `AccountId`.
-    #[must_use] 
-    pub const fn subject(mut self, subject: AccountId) -> Self {
+    #[must_use]
+    pub fn subject(mut self, subject: AccountId) -> Self {
         self.subject = Some(subject);
         self
     }

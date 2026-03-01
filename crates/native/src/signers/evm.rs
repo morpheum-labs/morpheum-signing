@@ -5,14 +5,19 @@
 //! use the `MetaMaskAdapter` instead (delegates signing to the browser wallet).
 
 use async_trait::async_trait;
-use k256::ecdsa::{SigningKey as SecpSigningKey, VerifyingKey as SecpVerifyingKey, Signature as SecpSignature};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use k256::ecdsa::{
+    signature::hazmat::PrehashSigner,
+    SigningKey as SecpSigningKey, VerifyingKey as SecpVerifyingKey,
+    Signature as SecpSignature,
+};
+use prost::Message;
+use zeroize::ZeroizeOnDrop;
 
 use morpheum_signing_core::{
-    error::SigningError,
+    error::{CryptoError, SigningError},
     proto::tx::v1::SignDoc,
     signer::Signer,
-    types::{AccountId, PublicKey, Signature, WalletType},
+    types::{PublicKey, Signature, WalletType},
 };
 
 /// Local secp256k1 signer for EVM compatibility.
@@ -31,7 +36,7 @@ impl EvmSigner {
     #[must_use]
     pub fn from_seed(seed: &[u8; 32]) -> Self {
         let signing_key = SecpSigningKey::from_slice(seed).expect("Invalid secp256k1 seed");
-        let verifying_key = signing_key.verifying_key();
+        let verifying_key = *signing_key.verifying_key();
         Self {
             signing_key,
             verifying_key,
@@ -45,7 +50,9 @@ impl Signer for EvmSigner {
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
         let signature: SecpSignature = self.signing_key.sign_prehash(&bytes)
-            .map_err(|e| SigningError::Crypto(e.to_string()))?;
+            .map_err(|e: k256::ecdsa::Error| {
+                SigningError::Crypto(CryptoError::Secp256k1(e.to_string()))
+            })?;
 
         // Return 64-byte (r, s) signature (standard compact form).
         // Recovery ID can be added later if needed for full EVM recoverable signatures.
@@ -66,12 +73,5 @@ impl Signer for EvmSigner {
     }
 }
 
-impl Drop for EvmSigner {
-    fn drop(&mut self) {
-        // k256 SigningKey implements Zeroize internally in recent versions,
-        // but we explicitly zeroize the seed-derived key material for safety.
-        // The key is zeroized on drop by the library's design.
-    }
-}
-
+// k256 `SigningKey` handles its own zeroization on `Drop`.
 impl ZeroizeOnDrop for EvmSigner {}
