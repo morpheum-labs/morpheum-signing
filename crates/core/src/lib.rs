@@ -25,6 +25,12 @@ pub mod nonce;
 pub mod signer;
 pub mod wallet_adapter;
 
+/// Chain-side transaction verification (signature + claim + mapping).
+///
+/// Requires the `full-crypto` feature for Ed25519 and Secp256k1 verification.
+#[cfg(feature = "full-crypto")]
+pub mod verifier;
+
 // ==================== PROTO RE-EXPORTS ====================
 
 /// Full protobuf namespace — mirrors the `pb` hierarchy from `morpheum-primitives`.
@@ -71,6 +77,10 @@ pub mod prelude {
     pub use super::signer::Signer;
     pub use super::wallet_adapter::WalletAdapter;
     pub use super::claim::{TradingKeyClaim, VcClaimBuilder};
+
+    // Chain-side verifier (feature-gated)
+    #[cfg(feature = "full-crypto")]
+    pub use super::verifier::{verify_signed_tx, VerifiedTx};
 }
 
 /// Crate version constant (useful for debugging and logging).

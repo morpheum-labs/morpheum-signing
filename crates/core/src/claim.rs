@@ -198,6 +198,62 @@ impl TradingKeyClaim {
         }
     }
 
+    /// Decodes a [`TradingKeyClaim`] from a `SignerInfo.signing_options` field.
+    ///
+    /// Returns `Ok(None)` if the signing options do not contain a `TradingKeyClaim`
+    /// (i.e., `algo_hint` is not `"trading_key_claim"`). Returns `Ok(Some(claim))`
+    /// if successfully decoded, or `Err` if the data is malformed.
+    ///
+    /// # Encoding Convention
+    ///
+    /// The `TxBuilder` encodes the claim as:
+    /// 1. `TradingKeyClaim` → proto bytes → `Any { type_url, value }`
+    /// 2. `Any` → proto bytes → stored in `SigningOptions.wasm_seed`
+    /// 3. `SigningOptions.algo_hint` = `"trading_key_claim"`
+    pub fn decode_from_signing_options(
+        opts: &crate::proto::tx::v1::SigningOptions,
+    ) -> Result<Option<Self>, SigningError> {
+        if opts.algo_hint != "trading_key_claim" {
+            return Ok(None);
+        }
+
+        let any = Any::decode(opts.wasm_seed.as_slice())
+            .map_err(|e| SigningError::invalid_claim(
+                alloc::format!("failed to decode claim Any envelope: {e}")
+            ))?;
+
+        if any.type_url != TRADING_KEY_CLAIM_TYPE_URL {
+            return Ok(None);
+        }
+
+        let proto = TradingKeyClaimProto::decode(any.value.as_slice())
+            .map_err(|e| SigningError::invalid_claim(
+                alloc::format!("failed to decode TradingKeyClaim proto: {e}")
+            ))?;
+
+        let issuer_bytes: [u8; 32] = proto.issuer.try_into()
+            .map_err(|_| SigningError::invalid_claim("issuer must be 32 bytes"))?;
+        let subject_bytes: [u8; 32] = proto.subject.try_into()
+            .map_err(|_| SigningError::invalid_claim("subject must be 32 bytes"))?;
+
+        let sig_bytes: [u8; 64] = proto.signature.try_into()
+            .map_err(|_| SigningError::invalid_claim("signature must be 64 bytes"))?;
+
+        Ok(Some(TradingKeyClaim {
+            issuer: crate::types::AccountId(issuer_bytes),
+            subject: crate::types::AccountId(subject_bytes),
+            permissions: proto.permissions,
+            max_daily_usd: proto.max_daily_usd,
+            expiry_timestamp: proto.expiry_timestamp,
+            nonce_sub_range_start: proto.nonce_sub_range_start,
+            nonce_sub_range_end: proto.nonce_sub_range_end,
+            // Default to Ed25519 since all Signature variants are 64 bytes;
+            // the actual curve is determined by the issuer's key type during
+            // cryptographic verification.
+            signature: crate::types::Signature::Ed25519(sig_bytes),
+        }))
+    }
+
     /// Converts to the internal prost-derived representation for encoding.
     fn to_proto_inner(&self) -> TradingKeyClaimProto {
         TradingKeyClaimProto {

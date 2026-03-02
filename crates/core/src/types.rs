@@ -153,6 +153,50 @@ pub enum PublicKey {
 }
 
 impl PublicKey {
+    /// Parses a `PublicKey` from a proto `Any` (as stored in `SignerInfo.public_key`).
+    ///
+    /// Dispatches on the `type_url` to determine the curve and key size.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SigningError::Crypto`] if the type_url is unrecognized or the
+    /// key bytes have an invalid length for the identified curve.
+    pub fn from_proto_any(any: &crate::proto::Any) -> Result<Self, crate::error::SigningError> {
+        use crate::error::{CryptoError, SigningError};
+
+        match any.type_url.as_str() {
+            "/cosmos.crypto.ed25519.PubKey" => {
+                let bytes: [u8; 32] = any.value.as_slice().try_into()
+                    .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
+                Ok(Self::Ed25519(bytes))
+            }
+            "/cosmos.crypto.secp256k1.PubKey" => {
+                let bytes: [u8; 33] = any.value.as_slice().try_into()
+                    .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
+                Ok(Self::Secp256k1(bytes))
+            }
+            "/morpheum.crypto.schnorr.PubKey" => {
+                let bytes: [u8; 32] = any.value.as_slice().try_into()
+                    .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
+                Ok(Self::Schnorr(bytes))
+            }
+            url => Err(SigningError::signing(alloc::format!(
+                "unsupported public key type_url: {url}"
+            ))),
+        }
+    }
+
+    /// Infers the [`WalletType`] from this public key's curve.
+    #[must_use]
+    pub const fn infer_wallet_type(&self) -> WalletType {
+        match self {
+            Self::Ed25519(_) => WalletType::Native,
+            Self::Secp256k1(_) => WalletType::Evm,
+            Self::Schnorr(_) => WalletType::Bitcoin,
+            Self::Agent(_) => WalletType::Agent,
+        }
+    }
+
     /// Derive the canonical `AccountId` from this public key (blake3 hash).
     #[must_use]
     pub fn to_account_id(&self) -> AccountId {
@@ -255,6 +299,43 @@ impl SignedTx {
     #[must_use]
     pub const fn new(tx: Tx, raw_bytes: Vec<u8>, tx_raw: Option<TxRaw>) -> Self {
         Self { tx, raw_bytes, tx_raw }
+    }
+
+    /// Decodes a [`SignedTx`] from raw protobuf bytes.
+    ///
+    /// Attempts to decode as a `Tx` proto message (Morpheum's canonical wire format),
+    /// which includes the full transaction with nonce and shard metadata.
+    ///
+    /// A synthetic `TxRaw` is reconstructed by re-encoding `body` and `auth_info`
+    /// from the decoded `Tx` to provide the exact byte representations needed for
+    /// `SignDoc` reconstruction during signature verification.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SigningError::ProtoDecode`] if the bytes cannot be decoded.
+    pub fn decode(raw_bytes: &[u8]) -> Result<Self, crate::error::SigningError> {
+        use prost::Message;
+
+        let tx = Tx::decode(raw_bytes)?;
+
+        let body_bytes = tx.body.as_ref()
+            .map(|b| b.encode_to_vec())
+            .unwrap_or_default();
+        let auth_info_bytes = tx.auth_info.as_ref()
+            .map(|a| a.encode_to_vec())
+            .unwrap_or_default();
+
+        let tx_raw = TxRaw {
+            body_bytes,
+            auth_info_bytes,
+            signatures: tx.signatures.clone(),
+        };
+
+        Ok(Self {
+            tx,
+            raw_bytes: raw_bytes.to_vec(),
+            tx_raw: Some(tx_raw),
+        })
     }
 
     /// Returns a reference to the decoded transaction.
