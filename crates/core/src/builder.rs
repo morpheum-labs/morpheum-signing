@@ -34,7 +34,7 @@ pub struct TxBuilder<S: Signer> {
     account_number: Option<u64>,
     memo: Option<String>,
     timeout_timestamp: Option<u64>, // seconds since epoch
-    messages: Vec<prost_types::Any>, // ← ONLY generic Any
+    messages: Vec<crate::proto::Any>, // ← ONLY generic Any
     signing_options: SigningOptions,
     nonce_provider: Option<BoxedNonceProvider>,
     #[allow(dead_code)]
@@ -93,10 +93,10 @@ impl<S: Signer> TxBuilder<S> {
 
     // ==================== GENERIC MESSAGE ADDING ====================
 
-    /// Adds a pre-packed `prost_types::Any` message to the transaction body.
+    /// Adds a pre-packed proto `Any` message to the transaction body.
     /// This is the **only** way to add messages — keeps the signing crate 100% generic.
     #[must_use]
-    pub fn add_message(mut self, msg: prost_types::Any) -> Self {
+    pub fn add_message(mut self, msg: crate::proto::Any) -> Self {
         self.messages.push(msg);
         self
     }
@@ -105,7 +105,7 @@ impl<S: Signer> TxBuilder<S> {
     /// The caller provides the exact type URL (e.g. "type.googleapis.com/market.v1.MsgCreateMarketRequest").
     #[must_use]
     pub fn add_typed_message<M: prost::Message>(mut self, type_url: impl Into<String>, msg: &M) -> Self {
-        self.messages.push(prost_types::Any {
+        self.messages.push(crate::proto::Any {
             type_url: type_url.into(),
             value: msg.encode_to_vec(),
         });
@@ -193,7 +193,7 @@ impl<S: Signer> TxBuilder<S> {
         let body = TxBody {
             messages: self.messages,
             memo: self.memo.unwrap_or_default(),
-            timeout_timestamp: self.timeout_timestamp.map(|ts| prost_types::Timestamp {
+            timeout_timestamp: self.timeout_timestamp.map(|ts| crate::proto::Timestamp {
                 seconds: ts as i64,
                 nanos: 0,
             }),
@@ -220,7 +220,7 @@ impl<S: Signer> TxBuilder<S> {
 
         #[cfg(not(feature = "dynamic-signer-info"))]
         let mut signer_info = SignerInfo {
-            public_key: Some(prost_types::Any {
+            public_key: Some(crate::proto::Any {
                 type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
                 value: Vec::new(),
             }),

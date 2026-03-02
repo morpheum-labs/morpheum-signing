@@ -10,7 +10,7 @@
 use alloc::vec::Vec;
 
 use prost::Message;
-use prost_types::Any;
+use crate::proto::Any;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
 /// The canonical protobuf type URL for [`TradingKeyClaim`].
 ///
 /// Matches the chain-side `vc.v1.TradingKeyClaim` proto message and is
-/// used as the `type_url` in [`prost_types::Any`] encoding.
+/// used as the `type_url` in proto `Any` encoding.
 pub const TRADING_KEY_CLAIM_TYPE_URL: &str =
     "type.googleapis.com/morpheum.signing.v1.TradingKeyClaim";
 
@@ -175,7 +175,7 @@ impl TradingKeyClaim {
         self.to_proto_inner().encode_to_vec()
     }
 
-    /// Packs the claim into a [`prost_types::Any`] for embedding in `SignerInfo`.
+    /// Packs the claim into a proto `Any` for embedding in `SignerInfo`.
     ///
     /// The `type_url` is [`TRADING_KEY_CLAIM_TYPE_URL`] and the `value` is the
     /// full prost-encoded claim (including signature).
@@ -187,7 +187,7 @@ impl TradingKeyClaim {
         }
     }
 
-    /// Consumes the claim and packs it into a [`prost_types::Any`].
+    /// Consumes the claim and packs it into a proto `Any`.
     ///
     /// Equivalent to [`to_proto_any`](Self::to_proto_any) but takes ownership.
     #[must_use]

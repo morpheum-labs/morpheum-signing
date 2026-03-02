@@ -19,7 +19,7 @@ readme = "README.md"
 
 [workspace.dependencies]
 # Core primitives
-morpheum-primitives = { path = "../mormcore/crates/primitives", package = "morm-primitives", features = ["full-protos"] }
+morpheum-primitives = { path = "../mormcore/crates/primitives", features = ["full-protos"] }
 
 # Shared minimal dependencies
 prost = { version = "0.14", default-features = false, features = ["derive"] }

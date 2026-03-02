@@ -5,7 +5,7 @@
 //!
 //! This crate is deliberately thin and depends **only** on the published
 //! `morpheum-primitives` crate for all protobuf types (Tx, `SignDoc`, Nonce, etc.).
-//! No direct dependency on proto-lib or any .proto files.
+//! No direct dependency on `.proto` files (types come via `morpheum-primitives` → `morpheum-proto`).
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -37,7 +37,7 @@ pub mod wallet_adapter;
 pub use morpheum_primitives::pb as proto;
 
 /// Prost Any re-export (used heavily in TxBody.messages).
-pub use prost_types::Any;
+pub use crate::proto::Any;
 
 // ==================== PUBLIC RE-EXPORTS ====================
 

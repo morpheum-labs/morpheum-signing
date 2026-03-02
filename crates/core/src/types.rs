@@ -45,7 +45,10 @@ pub use tx::{
 };
 
 /// Re-export Any for message packing.
-pub use prost_types::Any;
+///
+/// This is the generated `google.protobuf.Any` type compiled from source, which
+/// carries the same serde / cfg_attr derives as all other generated messages.
+pub use crate::proto::Any;
 
 /// Canonical `AccountId` used throughout Morpheum (blake3 hash of address).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -185,12 +188,12 @@ impl PublicKey {
         }
     }
 
-    /// Packs this public key into a [`prost_types::Any`] for `SignerInfo.public_key`.
+    /// Packs this public key into a proto `Any` for `SignerInfo.public_key`.
     ///
     /// This is the canonical encoding expected by the Morpheum chain.
     #[must_use]
-    pub fn to_proto_any(&self) -> prost_types::Any {
-        prost_types::Any {
+    pub fn to_proto_any(&self) -> crate::proto::Any {
+        crate::proto::Any {
             type_url: self.type_url().into(),
             value: self.to_proto_bytes(),
         }
@@ -286,7 +289,7 @@ impl SignedTx {
 /// Blanket-implemented for every type that implements [`prost::Name`],
 /// which provides the canonical `type_url()` and `full_name()`.
 pub trait IntoAny: prost::Name {
-    /// Packs `self` into a [`prost_types::Any`] with the canonical type URL.
+    /// Packs `self` into a proto `Any` with the canonical type URL.
     fn into_any(self) -> Any
     where
         Self: Sized,

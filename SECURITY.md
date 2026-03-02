@@ -64,7 +64,7 @@ and should be reviewed before every release.
 - [x] The `full` feature enables all features for production use.
 - [x] `no_std` compatibility is maintained in the core crate.
 - [x] `tonic`/`tokio`/`mio` are excluded from WASM builds via feature gating
-      in `morm-proto`.
+      in `morpheum-proto`.
 
 ### Testing
 

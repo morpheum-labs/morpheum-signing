@@ -61,12 +61,12 @@ pub trait Signer: Send + Sync + 'static {
         self.public_key().to_account_id()
     }
 
-    /// Returns the public key as a protobuf [`prost_types::Any`] for `SignerInfo.public_key`.
+    /// Returns the public key as a proto `Any` for `SignerInfo.public_key`.
     ///
     /// Default implementation uses [`PublicKey::to_proto_any()`], which encodes
     /// the correct `type_url` and raw key bytes for the chain.
     /// Concrete impls may override for custom proto encoding.
-    fn public_key_proto(&self) -> prost_types::Any {
+    fn public_key_proto(&self) -> crate::proto::Any {
         self.public_key().to_proto_any()
     }
 
