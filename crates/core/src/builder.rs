@@ -293,7 +293,6 @@ impl<S: Signer> TxBuilder<S> {
             auth_info: Some(auth_info),
             signatures: vec![sig_bytes],
             nonce: Some(nonce),
-            shard_id: None,
         };
 
         Ok(SignedTx::new(tx, raw_bytes, Some(tx_raw)))

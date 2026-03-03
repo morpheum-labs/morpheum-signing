@@ -207,7 +207,6 @@ fn test_signed_tx_accessors() {
         auth_info: None,
         signatures: vec![vec![1, 2, 3]],
         nonce: None,
-        shard_id: None,
     };
 
     let raw = vec![4, 5, 6];
