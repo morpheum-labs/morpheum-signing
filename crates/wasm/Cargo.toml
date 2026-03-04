@@ -56,3 +56,6 @@ full-wasm = [
     "morpheum-signing-core/claim-verification",
     "morpheum-signing-core/dynamic-signer-info",
 ]
+
+# Cryptogram integration (forwards to core)
+cryptogram = ["morpheum-signing-core/cryptogram"]

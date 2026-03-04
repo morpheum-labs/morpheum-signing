@@ -142,4 +142,13 @@ impl SigningError {
     pub fn claim_verification(msg: impl Into<String>) -> Self {
         Self::ClaimVerification(msg.into())
     }
+
+    /// Create a `Crypto` error from a message string.
+    ///
+    /// Wraps the message in [`CryptoError::Ed25519`] as a general-purpose
+    /// crypto error carrier. Prefer more specific constructors when the
+    /// exact curve is known.
+    pub fn crypto(msg: impl Into<String>) -> Self {
+        Self::Crypto(CryptoError::Ed25519(msg.into()))
+    }
 }

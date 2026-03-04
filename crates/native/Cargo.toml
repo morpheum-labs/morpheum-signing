@@ -65,5 +65,9 @@ bip39 = ["dep:bip39"]
 claim-verification = ["morpheum-signing-core/claim-verification"]
 dynamic-signer-info = ["morpheum-signing-core/dynamic-signer-info"]
 
+# Cryptogram integration (universal signing, HD derivation, address validation,
+# agent delegation, EIP-712 support) — forwards to core
+cryptogram = ["morpheum-signing-core/cryptogram"]
+
 # Everything
 full = ["http", "full-crypto", "bip39", "claim-verification", "dynamic-signer-info"]

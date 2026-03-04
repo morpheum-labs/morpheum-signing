@@ -114,6 +114,16 @@ pub fn bitcoin(signer: BitcoinSigner) -> builder::TxBuilder<BitcoinSigner> {
     builder::TxBuilder::new(signer)
 }
 
+// ==================== CRYPTOGRAM BRIDGE (Feature-gated) ====================
+
+/// Re-export the cryptogram bridge for native consumers.
+///
+/// Provides universal signing, HD derivation, address validation,
+/// agent delegation, and EIP-712 support — all backed by the
+/// cryptogram workspace as the single source of truth.
+#[cfg(feature = "cryptogram")]
+pub use morpheum_signing_core::cryptogram_bridge;
+
 // ==================== RECOMMENDED PRELUDE ====================
 
 /// Recommended prelude for native usage.
@@ -149,4 +159,8 @@ pub mod prelude {
     pub use super::solana;
     #[cfg(feature = "bitcoin")]
     pub use super::bitcoin;
+
+    // Cryptogram bridge
+    #[cfg(feature = "cryptogram")]
+    pub use super::cryptogram_bridge;
 }

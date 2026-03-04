@@ -190,7 +190,7 @@ pub fn verify_signed_tx(
         sign_mode: primary_sign_mode,
         body: body.clone(),
         auth_info: auth_info.clone(),
-        nonce: tx.nonce.clone(),
+        nonce: tx.nonce,
     })
 }
 

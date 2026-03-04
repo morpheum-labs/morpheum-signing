@@ -31,6 +31,16 @@ pub mod wallet_adapter;
 #[cfg(feature = "full-crypto")]
 pub mod verifier;
 
+/// Thin bridge to the cryptogram workspace — universal signing, HD derivation,
+/// address validation, agent delegation, and EIP-712 support.
+///
+/// Cryptogram is the single source of truth for all cryptographic operations.
+/// This bridge provides clean access without duplicating any logic.
+///
+/// Requires the `cryptogram` feature.
+#[cfg(feature = "cryptogram")]
+pub mod cryptogram_bridge;
+
 // ==================== PROTO RE-EXPORTS ====================
 
 /// Full protobuf namespace — mirrors the `pb` hierarchy from `morpheum-primitives`.
@@ -50,6 +60,10 @@ pub use crate::proto::Any;
 pub use error::SigningError;
 
 /// Recommended ergonomic prelude for users.
+///
+/// Brings in core signing types, traits, protobuf definitions, and — when
+/// the `cryptogram` feature is enabled — all commonly used cryptographic
+/// primitives and standards types via the `morpheum-crypto` meta-crate.
 ///
 /// ```rust,ignore
 /// use morpheum_signing_core::prelude::*;
@@ -81,6 +95,15 @@ pub mod prelude {
     // Chain-side verifier (feature-gated)
     #[cfg(feature = "full-crypto")]
     pub use super::verifier::{verify_signed_tx, VerifiedTx};
+
+    // Cryptogram: bridge module + unified crypto/types/standards prelude.
+    // Enables `SigType`, `ChainType`, `Domain`, `generate_single_from_digest`,
+    // `validate_address_for_chain`, `TxSigner`, etc. via a single import.
+    #[cfg(feature = "cryptogram")]
+    pub use super::cryptogram_bridge;
+
+    #[cfg(feature = "cryptogram")]
+    pub use morpheum_crypto::prelude::*;
 }
 
 /// Crate version constant (useful for debugging and logging).

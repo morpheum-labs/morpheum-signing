@@ -21,6 +21,10 @@ readme = "README.md"
 # Core primitives
 morpheum-primitives = { path = "../mormcore/crates/primitives", features = ["full-protos"] }
 
+# Cryptogram workspace — single source of truth for crypto, HD, standards
+morpheum-crypto = { path = "../cryptogram/crates/morpheum-crypto", features = ["bls", "mldsa44"] }
+cryptogram-hd = { path = "../cryptogram/crates/cryptogram-hd" }
+
 # Shared minimal dependencies
 prost = { version = "0.14", default-features = false, features = ["derive"] }
 prost-types = "0.14"
@@ -55,6 +59,7 @@ js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 web-sys = { version = "0.3", features = ["Window", "Navigator", "console"] }
 console_error_panic_hook = "0.1"
+
 
 [profile.release]
 opt-level = 3

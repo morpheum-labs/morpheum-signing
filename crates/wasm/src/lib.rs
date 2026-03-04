@@ -183,6 +183,16 @@ export class VcClaimBuilder {
 }
 "#;
 
+// ==================== PRELUDE ====================
+
+/// Most commonly used items for WASM consumers.
+///
+/// Re-exports the core prelude (types, traits, proto definitions) for any
+/// Rust code that may conditionally compile against the WASM crate.
+pub mod prelude {
+    pub use morpheum_signing_core::prelude::*;
+}
+
 // ==================== CONVENIENCE LOGGING ====================
 
 #[wasm_bindgen]
