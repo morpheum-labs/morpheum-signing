@@ -2496,6 +2496,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "k256",
+ "morpheum-crypto",
  "morpheum-signing-core",
  "prost",
  "reqwest",

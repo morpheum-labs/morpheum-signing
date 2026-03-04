@@ -10,6 +10,7 @@
 //! - TradingKeyClaim verification & encoding (audit Critical Issue #2)
 //! - Error handling and edge cases
 //! - Security properties
+//! - Cross-crate integration (cryptogram ↔ signing)
 //!
 //! Run with: `cargo test -p morpheum-signing-native --test integration --all-features`
 
@@ -31,3 +32,5 @@ mod signer_info_tests;
 mod signing_flows;
 #[path = "integration/security_tests.rs"]
 mod security_tests;
+#[path = "integration/cross_crate_signing.rs"]
+mod cross_crate_signing;
