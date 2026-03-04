@@ -4,6 +4,18 @@
 //! This abstraction allows `TxBuilder` to work uniformly with any address format
 //! (EVM, Solana, Bitcoin Taproot, Native, Agent DID, etc.) without coupling
 //! to concrete parsing or hashing logic.
+//!
+//! # Future Extraction (Fix Guard — Issue 4)
+//!
+//! The address-to-`AccountId` mapping logic here partially overlaps with
+//! chain-specific address derivation in `cryptogram-hd-core`. A future
+//! `morpheum-address` crate (under the cryptogram workspace) will unify
+//! both, becoming the single source of truth for address mapping. This
+//! module's public API will remain stable; only the implementation will
+//! delegate to the new crate.
+//!
+//! **When to execute**: after both workspaces reach v0.2.0 and have been
+//! in production for 30+ days.
 
 use crate::{
     error::SigningError,

@@ -41,6 +41,23 @@ pub mod verifier;
 #[cfg(feature = "cryptogram")]
 pub mod cryptogram_bridge;
 
+/// Direct re-export of `cryptogram-crypto` for low-level cryptographic operations.
+///
+/// Making this an explicit, direct dependency (rather than only transitive through
+/// `morpheum-crypto`) improves supply-chain visibility (`cargo audit`, `cargo tree`)
+/// and lets advanced consumers import low-level primitives directly:
+///
+/// ```rust,ignore
+/// use morpheum_signing_core::cryptogram_crypto::{ed25519_sign, CryptoError};
+/// ```
+///
+/// For most users, the [`cryptogram_bridge`] module or the [`prelude`] provide
+/// a higher-level, more ergonomic interface.
+///
+/// Requires the `cryptogram` feature.
+#[cfg(feature = "cryptogram")]
+pub use cryptogram_crypto;
+
 // ==================== PROTO RE-EXPORTS ====================
 
 /// Full protobuf namespace — mirrors the `pb` hierarchy from `morpheum-primitives`.

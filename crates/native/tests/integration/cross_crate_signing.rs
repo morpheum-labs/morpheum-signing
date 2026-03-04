@@ -478,6 +478,47 @@ async fn test_multiple_standards_messages_in_single_tx() {
     assert_eq!(verified.account_ids.len(), 1);
 }
 
+// ==================== EXPLICIT CRYPTOGRAM-CRYPTO DEPENDENCY ====================
+
+/// Uses the explicit `cryptogram_crypto` re-export from `morpheum-signing-core`
+/// (not the bridge module) to sign and verify a digest. This validates that the
+/// direct dependency declared in Cargo.toml resolves correctly and that low-level
+/// crypto primitives are accessible without intermediate wrappers.
+#[tokio::test]
+async fn test_explicit_cryptogram_crypto_reexport() {
+    // Access cryptogram-crypto directly through the new crate-level re-export
+    use morpheum_signing_core::cryptogram_crypto;
+
+    // Use a fixed 32-byte digest as test vector (avoids extra sha2 dev-dep)
+    let digest: [u8; 32] = [0xAB; 32];
+
+    // Sign using the explicit re-export path
+    let signature = cryptogram_crypto::ed25519_sign(&digest, &TEST_SEED)
+        .expect("ed25519_sign via explicit re-export");
+
+    // Verify using the explicit re-export path
+    let pubkey = cryptogram_crypto::ed25519_public_key(&TEST_SEED);
+    let valid = cryptogram_crypto::ed25519_verify(&digest, &signature, &pubkey)
+        .expect("ed25519_verify via explicit re-export");
+    assert!(valid, "signature must verify via explicit cryptogram-crypto re-export");
+
+    // Also verify via the universal dispatcher to exercise the full API surface
+    let sig_for_universal = Eip712Signature {
+        signer: hex::encode(pubkey),
+        signature: hex::encode(signature),
+        sig_type: Some(SigType::Ed25519),
+        timestamp: None,
+    };
+    let universal_valid = cryptogram_crypto::verify_single_from_digest(
+        &digest,
+        &[sig_for_universal],
+        SigType::Ed25519,
+        1,
+    )
+    .expect("universal verify via explicit re-export");
+    assert!(universal_valid, "universal verifier must agree");
+}
+
 // ==================== DETERMINISM ====================
 
 /// Same standards payload + same signer seed → identical SignedTx.

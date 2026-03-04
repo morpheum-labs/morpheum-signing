@@ -10,6 +10,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
+authors = ["Morpheum Labs"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/morpheum-labs/signing"
 homepage = "https://morpheum.xyz"
@@ -23,6 +24,7 @@ morpheum-primitives = { path = "../mormcore/crates/primitives", features = ["ful
 
 # Cryptogram workspace — single source of truth for crypto, HD, standards
 morpheum-crypto = { path = "../cryptogram/crates/morpheum-crypto", features = ["bls", "mldsa44"] }
+cryptogram-crypto = { path = "../cryptogram/crates/cryptogram-crypto" }
 cryptogram-hd = { path = "../cryptogram/crates/cryptogram-hd" }
 
 # Shared minimal dependencies

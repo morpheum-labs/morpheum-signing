@@ -2469,6 +2469,7 @@ name = "morpheum-signing-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "cryptogram-crypto",
  "ed25519-dalek",
  "hex",
  "k256",
