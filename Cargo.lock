@@ -2452,6 +2452,7 @@ dependencies = [
  "prost",
  "serde",
  "sha2",
+ "sha3",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -2480,6 +2481,7 @@ dependencies = [
  "secrecy",
  "serde",
  "sha2",
+ "sha3",
  "thiserror 2.0.18",
  "tokio",
  "tsify",

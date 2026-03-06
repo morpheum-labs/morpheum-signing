@@ -21,8 +21,8 @@ wasm = ["wasm-bindgen", "tsify"]
 dynamic-signer-info = []
 # TradingKeyClaim embedding & verification (Phase 2)
 claim-verification = []
-# Full cryptographic verification (ed25519 + secp256k1) for chain-side verifier
-full-crypto = ["dep:ed25519-dalek", "dep:k256"]
+# Full cryptographic verification (ed25519 + secp256k1 + keccak256) for chain-side verifier
+full-crypto = ["dep:ed25519-dalek", "dep:k256", "dep:sha3"]
 # Cryptogram integration: universal signing, HD derivation, address validation,
 # agent delegation, EIP-712 support. Requires std.
 cryptogram = ["std", "dep:morpheum-crypto", "dep:cryptogram-crypto"]
@@ -42,7 +42,8 @@ hex = { workspace = true }
 
 # Cryptographic verification backends (optional, feature-gated)
 ed25519-dalek = { version = "2.1", default-features = false, features = ["zeroize"], optional = true }
-k256 = { version = "0.13", default-features = false, features = ["ecdsa"], optional = true }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "alloc"], optional = true }
+sha3 = { version = "0.10", default-features = false, optional = true }
 
 # Cryptogram workspace — unified crypto, types, and standards (optional, feature-gated)
 morpheum-crypto = { workspace = true, optional = true }

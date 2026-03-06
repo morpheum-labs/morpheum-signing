@@ -1,8 +1,9 @@
 //! Transaction verification for chain-side authentication.
 //!
 //! This module provides **pure cryptographic verification** of signed Morpheum
-//! transactions. It is the single source of truth for signature validation,
-//! `TradingKeyClaim` extraction, and public-key-to-`AccountId` mapping.
+//! transactions. It is the canonical entry point for the `auth` module's
+//! `TxAuthHotPath`, handling signature validation, `TradingKeyClaim` extraction,
+//! and public-key-to-`AccountId` mapping.
 //!
 //! # Feature Gate
 //!
@@ -13,7 +14,9 @@
 //! - **Pure function**: No state, no I/O — only cryptographic verification.
 //! - **Multi-curve**: Dispatches Ed25519, Secp256k1 based on `SignerInfo.mode_info`.
 //! - **Constant-time**: All signature verification uses constant-time operations.
-//! - **DRY**: Mormcore's `auth` module calls this instead of reimplementing crypto.
+//! - **DRY**: Delegates to `morpheum_primitives::crypto` for Ed25519, Secp256k1,
+//!   and EIP-191 ecrecover — single source of truth for low-level curve crypto.
+//!   Only `verify_eip191_personal` (full-key EIP-191, SDK/agent path) is local.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -66,6 +69,26 @@ pub struct VerifiedTx {
 
     /// Transaction nonce (from `Tx.nonce` if present).
     pub nonce: Option<tx::Nonce>,
+
+    // ── Agent context (extracted from primary signer's SignerInfo) ──
+
+    /// Agent DID string (e.g. `"did:agent:abc123…"`).
+    ///
+    /// Used by the auth hotpath for identity lookup and shard-affinity routing.
+    /// `None` for regular (non-agent) transactions — zero overhead.
+    pub agent_did: Option<String>,
+
+    /// Raw Verifiable Presentation bytes.
+    ///
+    /// Decoded and verified by the VC hotpath for delegation claims
+    /// (max daily USD, allowed pairs, etc.).
+    pub verifiable_presentation: Option<Vec<u8>>,
+
+    /// Delegated trading key address.
+    ///
+    /// Checked against pre-approved keys (via `MsgApproveTradingKey`)
+    /// in the auth keeper. Enables nonce sub-range isolation for parallelism.
+    pub trading_key_address: Option<String>,
 }
 
 // ============================================================================
@@ -183,6 +206,9 @@ pub fn verify_signed_tx(
         }
     }
 
+    // ── Extract agent context from primary signer ──
+    let primary_si = &signer_infos[0];
+
     Ok(VerifiedTx {
         account_ids,
         trading_key_claim,
@@ -191,6 +217,9 @@ pub fn verify_signed_tx(
         body: body.clone(),
         auth_info: auth_info.clone(),
         nonce: tx.nonce,
+        agent_did: primary_si.agent_did.clone(),
+        verifiable_presentation: primary_si.verifiable_presentation.clone(),
+        trading_key_address: primary_si.trading_key_address.clone(),
     })
 }
 
@@ -206,11 +235,13 @@ pub fn verify_signed_tx(
 ///
 /// # Supported Curves
 ///
-/// | PublicKey variant | SignMode(s)                                | Library        |
-/// |-------------------|--------------------------------------------|----------------|
-/// | Ed25519 / Agent   | Ed25519, GaslessEd25519                    | ed25519-dalek  |
-/// | Secp256k1         | Secp256k1, EcdsaLegacy, Keccak256          | k256           |
-/// | Schnorr           | SchnorrAggregate                           | (unsupported)  |
+/// | PublicKey variant | SignMode(s)                                | Verifier            |
+/// |-------------------|--------------------------------------------|---------------------|
+/// | Ed25519 / Agent   | Ed25519, GaslessEd25519                    | ed25519-dalek       |
+/// | Secp256k1         | Secp256k1, EcdsaLegacy, Keccak256          | k256 ECDSA          |
+/// | Secp256k1         | Eip191Personal                             | k256 + sha3         |
+/// | EvmAddress        | Eip191Personal                             | k256 ecrecover      |
+/// | Schnorr           | SchnorrAggregate                           | (unsupported)       |
 fn verify_signature(
     pubkey: &PublicKey,
     sign_doc_bytes: &[u8],
@@ -224,10 +255,31 @@ fn verify_signature(
             verify_ed25519(key_bytes, sign_doc_bytes, sig_bytes)
         }
 
-        // ── Secp256k1 (EVM / MetaMask) ──
+        // ── Secp256k1 raw ECDSA (standard, pre-hashed) ──
         (PublicKey::Secp256k1(key_bytes),
          SignMode::Secp256k1 | SignMode::EcdsaLegacy | SignMode::Keccak256) => {
             verify_secp256k1(key_bytes, sign_doc_bytes, sig_bytes)
+        }
+
+        // ── EIP-191 personal_sign with full compressed public key ──
+        //
+        // When the client provides the full 33-byte compressed secp256k1 key
+        // (e.g., from SDK or agent context where the key is known), we can
+        // directly verify the ECDSA signature against the EIP-191 hash.
+        (PublicKey::Secp256k1(key_bytes),
+         SignMode::Eip191Personal) => {
+            verify_eip191_personal(key_bytes, sign_doc_bytes, sig_bytes)
+        }
+
+        // ── EIP-191 personal_sign with EVM address only (ecrecover) ──
+        //
+        // MetaMask / EVM wallet flow: the client only provides its 20-byte
+        // Ethereum address. The verifier recovers the public key from the
+        // 65-byte signature (r‖s‖v), derives the EVM address from the
+        // recovered key, and compares it to the expected address.
+        (PublicKey::EvmAddress(expected_addr),
+         SignMode::Eip191Personal) => {
+            verify_eip191_ecrecover(expected_addr, sign_doc_bytes, sig_bytes)
         }
 
         // ── Unsupported combinations ──
@@ -235,55 +287,115 @@ fn verify_signature(
     }
 }
 
-/// Ed25519 signature verification using `ed25519-dalek` (strict mode).
+/// Ed25519 signature verification — delegates to `morpheum_primitives::crypto`.
+///
+/// Single source of truth: `verify_ed25519_bytes` in primitives performs
+/// strict Ed25519 verification via `ed25519-dalek`. This wrapper maps the
+/// primitives error to `SigningError`.
 fn verify_ed25519(
     key_bytes: &[u8; 32],
     message: &[u8],
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
-    use ed25519_dalek::{Signature as DalekSig, VerifyingKey};
-
-    let verifying_key = VerifyingKey::from_bytes(key_bytes)
+    morpheum_primitives::crypto::verify_ed25519_bytes(key_bytes, message, sig_bytes)
         .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(
-            alloc::format!("invalid ed25519 public key: {e}")
-        )))?;
-
-    let sig_arr: [u8; 64] = sig_bytes.try_into()
-        .map_err(|_| SigningError::Crypto(CryptoError::Ed25519(
-            String::from("signature must be 64 bytes")
-        )))?;
-    let signature = DalekSig::from_bytes(&sig_arr);
-
-    verifying_key.verify_strict(message, &signature)
-        .map_err(|_| SigningError::Crypto(CryptoError::SignatureVerificationFailed))
+            alloc::format!("{e}")
+        )))
 }
 
-/// Secp256k1 ECDSA signature verification using `k256`.
+/// Secp256k1 ECDSA signature verification — delegates to `morpheum_primitives::crypto`.
 ///
-/// Uses `verify_prehash` to match the signing side's `sign_prehash` convention
-/// (raw `SignDoc` bytes are treated as the pre-hashed message).
+/// Single source of truth: `verify_secp256k1_bytes` in primitives uses
+/// `k256::ecdsa::Verifier::verify` which internally SHA-256 hashes the
+/// message before ECDSA verification (standard convention). The signing
+/// side must use `SigningKey::sign(message)` which applies the same hash.
 fn verify_secp256k1(
     key_bytes: &[u8; 33],
     message: &[u8],
+    sig_bytes: &[u8],
+) -> Result<(), SigningError> {
+    morpheum_primitives::crypto::verify_secp256k1_bytes(key_bytes, message, sig_bytes)
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
+            alloc::format!("{e}")
+        )))
+}
+
+/// EIP-191 `personal_sign` verification using `k256` + `sha3` (Keccak-256).
+///
+/// MetaMask (and other EVM wallets) sign via `personal_sign`, which:
+/// 1. Prepends the EIP-191 prefix: `"\x19Ethereum Signed Message:\n" + decimal_len`
+/// 2. Concatenates the raw message bytes
+/// 3. Computes `keccak256` of the prefixed message
+/// 4. Signs the 32-byte hash with ECDSA (secp256k1)
+/// 5. Returns a 65-byte signature: `r(32) || s(32) || v(1)`
+///
+/// This function reconstructs the same keccak256 hash from `sign_doc_bytes`
+/// and verifies the ECDSA signature against the declared compressed public key.
+/// The recovery byte `v` is stripped if a 65-byte signature is provided.
+fn verify_eip191_personal(
+    key_bytes: &[u8; 33],
+    sign_doc_bytes: &[u8],
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     use k256::ecdsa::{
         signature::hazmat::PrehashVerifier,
         Signature as SecpSig, VerifyingKey,
     };
+    use sha3::{Digest, Keccak256};
 
+    // 1. Reconstruct the EIP-191 personal_sign hash.
+    //    This matches what MetaMask computes internally:
+    //    keccak256("\x19Ethereum Signed Message:\n" + decimal_len(msg) + msg)
+    let prefix = alloc::format!("\x19Ethereum Signed Message:\n{}", sign_doc_bytes.len());
+    let hash: [u8; 32] = {
+        let mut keccak = Keccak256::new();
+        keccak.update(prefix.as_bytes());
+        keccak.update(sign_doc_bytes);
+        keccak.finalize().into()
+    };
+
+    // 2. Parse the compressed secp256k1 public key (33 bytes).
     let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes)
         .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
             alloc::format!("invalid secp256k1 public key: {e}")
         )))?;
 
-    let signature = SecpSig::from_slice(sig_bytes)
+    // 3. Extract the 64-byte ECDSA signature (r || s).
+    //    MetaMask returns 65 bytes (r:32 + s:32 + v:1); strip the recovery
+    //    byte `v` for standard ECDSA verification.
+    let sig_data = match sig_bytes.len() {
+        65 => &sig_bytes[..64],
+        64 => sig_bytes,
+        len => return Err(SigningError::Crypto(CryptoError::Secp256k1(
+            alloc::format!("EIP-191 signature must be 64 or 65 bytes, got {len}")
+        ))),
+    };
+
+    let signature = SecpSig::from_slice(sig_data)
         .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
-            alloc::format!("invalid secp256k1 signature: {e}")
+            alloc::format!("invalid EIP-191 secp256k1 signature: {e}")
         )))?;
 
-    verifying_key.verify_prehash(message, &signature)
+    // 4. Verify the signature against the EIP-191 keccak256 hash.
+    verifying_key.verify_prehash(&hash, &signature)
         .map_err(|_| SigningError::Crypto(CryptoError::SignatureVerificationFailed))
+}
+
+/// EIP-191 `personal_sign` verification via **ecrecover** — delegates to
+/// `morpheum_primitives::crypto::eip191_ecrecover_verify`.
+///
+/// Single source of truth: primitives handles the full EIP-191 envelope
+/// reconstruction, public key recovery, and address comparison. This wrapper
+/// maps the primitives error to `SigningError`.
+fn verify_eip191_ecrecover(
+    expected_addr: &[u8; 20],
+    sign_doc_bytes: &[u8],
+    sig_bytes: &[u8],
+) -> Result<(), SigningError> {
+    morpheum_primitives::crypto::eip191_ecrecover_verify(expected_addr, sign_doc_bytes, sig_bytes)
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
+            alloc::format!("{e}")
+        )))
 }
 
 // ============================================================================

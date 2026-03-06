@@ -41,6 +41,10 @@ pub struct TxBuilder<S: Signer> {
     address_mapper: Box<dyn AddressMapper>,
     wallet_adapter: Option<BoxedWalletAdapter>,
     trading_key_claim: Option<TradingKeyClaim>,
+    // Agent-specific context (optional, zero overhead for regular users).
+    agent_did: Option<String>,
+    verifiable_presentation: Option<Vec<u8>>,
+    trading_key_address: Option<String>,
 }
 
 impl<S: Signer + fmt::Debug> fmt::Debug for TxBuilder<S> {
@@ -72,6 +76,9 @@ impl<S: Signer> TxBuilder<S> {
             address_mapper: Box::new(DefaultAddressMapper),
             wallet_adapter: None,
             trading_key_claim: None,
+            agent_did: None,
+            verifiable_presentation: None,
+            trading_key_address: None,
         }
     }
 
@@ -153,6 +160,38 @@ impl<S: Signer> TxBuilder<S> {
 
     // ==================== AGENT-SPECIFIC ====================
 
+    /// Sets the agent DID (e.g. `"did:agent:abc123…"`).
+    ///
+    /// Used by the chain-side auth hotpath for identity lookup and
+    /// shard-affinity routing (`blake3(did)` → shard). Zero overhead
+    /// when `None` (regular human transactions).
+    #[must_use]
+    pub fn with_agent_did(mut self, did: impl Into<String>) -> Self {
+        self.agent_did = Some(did.into());
+        self
+    }
+
+    /// Sets the raw Verifiable Presentation bytes.
+    ///
+    /// The VP is a signed bundle of claims (max daily USD, allowed pairs,
+    /// etc.) verified by the VC hotpath on the chain side. Encode the
+    /// `vc.v1.Vp` proto message to bytes before passing here.
+    #[must_use]
+    pub fn with_verifiable_presentation(mut self, vp: Vec<u8>) -> Self {
+        self.verifiable_presentation = Some(vp);
+        self
+    }
+
+    /// Explicitly sets the delegated trading key address.
+    ///
+    /// When omitted and a [`TradingKeyClaim`] is attached, the address is
+    /// auto-derived from the claim's `subject` (`hex(subject.0)`).
+    #[must_use]
+    pub fn with_trading_key_address(mut self, addr: impl Into<String>) -> Self {
+        self.trading_key_address = Some(addr.into());
+        self
+    }
+
     /// Attaches a `TradingKeyClaim` for agent delegation.
     #[must_use]
     pub fn with_trading_key_claim(mut self, claim: TradingKeyClaim) -> Self {
@@ -204,6 +243,13 @@ impl<S: Signer> TxBuilder<S> {
         // With `dynamic-signer-info`: public key and sign mode are derived from
         // the signer's actual key type (fixes Critical Issue #1 from audit).
         // Without: falls back to legacy hardcoded ed25519 for backward compat.
+
+        // Auto-derive trading_key_address from TradingKeyClaim.subject when
+        // the caller hasn't set it explicitly. The subject IS the trading key.
+        let trading_key_address = self.trading_key_address.or_else(|| {
+            self.trading_key_claim.as_ref().map(|c| hex::encode(c.subject.0))
+        });
+
         #[cfg(feature = "dynamic-signer-info")]
         let mut signer_info = SignerInfo {
             public_key: Some(self.signer.public_key_proto()),
@@ -216,6 +262,9 @@ impl<S: Signer> TxBuilder<S> {
             deadline: self.signing_options.deadline_seconds.unwrap_or(0),
             signing_options: None,
             timestamp: None,
+            agent_did: self.agent_did,
+            verifiable_presentation: self.verifiable_presentation,
+            trading_key_address,
         };
 
         #[cfg(not(feature = "dynamic-signer-info"))]
@@ -233,6 +282,9 @@ impl<S: Signer> TxBuilder<S> {
             deadline: self.signing_options.deadline_seconds.unwrap_or(0),
             signing_options: None,
             timestamp: None,
+            agent_did: self.agent_did,
+            verifiable_presentation: self.verifiable_presentation,
+            trading_key_address,
         };
 
         // 3.5 Embed TradingKeyClaim if present (fixes Critical Issue #2).

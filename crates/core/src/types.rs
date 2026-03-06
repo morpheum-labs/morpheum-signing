@@ -144,8 +144,14 @@ impl Address {
 pub enum PublicKey {
     /// Ed25519 32-byte public key (Native + Agent TradingKey).
     Ed25519(#[serde(with = "hex_bytes")] [u8; 32]),
-    /// Secp256k1 compressed public key (33 bytes) — EVM / MetaMask.
+    /// Secp256k1 compressed public key (33 bytes) — EVM / MetaMask (full key).
     Secp256k1(#[serde(with = "hex_bytes")] [u8; 33]),
+    /// 20-byte EVM address — for EIP-191 `personal_sign` (ecrecover verification).
+    ///
+    /// Used when the client sends only its Ethereum address (MetaMask `personal_sign`
+    /// flow). The chain verifies by recovering the public key from the signature
+    /// via ecrecover and comparing the derived 20-byte address.
+    EvmAddress(#[serde(with = "hex_bytes")] [u8; 20]),
     /// BIP-340 Schnorr X-only public key (32 bytes) — Bitcoin Taproot.
     Schnorr(#[serde(with = "hex_bytes")] [u8; 32]),
     /// Agent key (alias to Ed25519 for clarity).
@@ -171,9 +177,20 @@ impl PublicKey {
                 Ok(Self::Ed25519(bytes))
             }
             "/cosmos.crypto.secp256k1.PubKey" => {
-                let bytes: [u8; 33] = any.value.as_slice().try_into()
-                    .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
-                Ok(Self::Secp256k1(bytes))
+                // Dispatch on length to support both:
+                //   - 33 bytes: SEC1-compressed secp256k1 public key (standard ECDSA)
+                //   - 20 bytes: raw EVM address (for EIP-191 personal_sign ecrecover)
+                match any.value.len() {
+                    33 => {
+                        let bytes: [u8; 33] = any.value.as_slice().try_into().unwrap();
+                        Ok(Self::Secp256k1(bytes))
+                    }
+                    20 => {
+                        let bytes: [u8; 20] = any.value.as_slice().try_into().unwrap();
+                        Ok(Self::EvmAddress(bytes))
+                    }
+                    _ => Err(SigningError::Crypto(CryptoError::InvalidPublicKeyLength)),
+                }
             }
             "/morpheum.crypto.schnorr.PubKey" => {
                 let bytes: [u8; 32] = any.value.as_slice().try_into()
@@ -191,18 +208,19 @@ impl PublicKey {
     pub const fn infer_wallet_type(&self) -> WalletType {
         match self {
             Self::Ed25519(_) => WalletType::Native,
-            Self::Secp256k1(_) => WalletType::Evm,
+            Self::Secp256k1(_) | Self::EvmAddress(_) => WalletType::Evm,
             Self::Schnorr(_) => WalletType::Bitcoin,
             Self::Agent(_) => WalletType::Agent,
         }
     }
 
-    /// Derive the canonical `AccountId` from this public key (blake3 hash).
+    /// Derive the canonical `AccountId` from this public key (SHA-256 hash).
     #[must_use]
     pub fn to_account_id(&self) -> AccountId {
         let bytes = match self {
             Self::Ed25519(b) | Self::Agent(b) | Self::Schnorr(b) => b.as_slice(),
             Self::Secp256k1(b) => b.as_slice(),
+            Self::EvmAddress(b) => b.as_slice(),
         };
         let hash = Sha256::digest(bytes);
         let mut arr = [0u8; 32];
@@ -218,7 +236,7 @@ impl PublicKey {
     pub fn type_url(&self) -> &'static str {
         match self {
             Self::Ed25519(_) | Self::Agent(_) => "/cosmos.crypto.ed25519.PubKey",
-            Self::Secp256k1(_) => "/cosmos.crypto.secp256k1.PubKey",
+            Self::Secp256k1(_) | Self::EvmAddress(_) => "/cosmos.crypto.secp256k1.PubKey",
             Self::Schnorr(_) => "/morpheum.crypto.schnorr.PubKey",
         }
     }
@@ -229,6 +247,7 @@ impl PublicKey {
         match self {
             Self::Ed25519(b) | Self::Agent(b) | Self::Schnorr(b) => b.to_vec(),
             Self::Secp256k1(b) => b.to_vec(),
+            Self::EvmAddress(b) => b.to_vec(),
         }
     }
 
