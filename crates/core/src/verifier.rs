@@ -238,6 +238,7 @@ pub fn verify_signed_tx(
 /// | PublicKey variant | SignMode(s)                                | Verifier            |
 /// |-------------------|--------------------------------------------|---------------------|
 /// | Ed25519 / Agent   | Ed25519, GaslessEd25519                    | ed25519-dalek       |
+/// | Ed25519 / Agent   | SolanaOffchain                             | ed25519 hex-encoded |
 /// | Secp256k1         | Secp256k1, EcdsaLegacy, Keccak256          | k256 ECDSA          |
 /// | Secp256k1         | Eip191Personal                             | k256 + sha3         |
 /// | EvmAddress        | Eip191Personal                             | k256 ecrecover      |
@@ -280,6 +281,18 @@ fn verify_signature(
         (PublicKey::EvmAddress(expected_addr),
          SignMode::Eip191Personal) => {
             verify_eip191_ecrecover(expected_addr, sign_doc_bytes, sig_bytes)
+        }
+
+        // ── Solana off-chain message (hex-encoded SignDoc via Phantom) ──
+        //
+        // Phantom's `signMessage` converts bytes through UTF-8 internally,
+        // which corrupts non-ASCII binary data. The client hex-encodes the
+        // SignDoc bytes before passing to the wallet, producing an ASCII
+        // string that survives the UTF-8 round-trip losslessly.
+        // We reproduce the same hex encoding here before Ed25519 verification.
+        (PublicKey::Ed25519(key_bytes) | PublicKey::Agent(key_bytes),
+         SignMode::SolanaOffchain) => {
+            verify_ed25519_hex_encoded(key_bytes, sign_doc_bytes, sig_bytes)
         }
 
         // ── Unsupported combinations ──
@@ -394,6 +407,29 @@ fn verify_eip191_ecrecover(
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::eip191_ecrecover_verify(expected_addr, sign_doc_bytes, sig_bytes)
         .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
+            alloc::format!("{e}")
+        )))
+}
+
+/// Ed25519 verification for Solana off-chain messages (hex-encoded SignDoc).
+///
+/// Phantom's `signMessage` API internally converts the message bytes through
+/// `Buffer.toString("utf-8")`, which is lossy for non-ASCII binary data
+/// (invalid UTF-8 sequences are replaced with U+FFFD). To avoid this
+/// corruption, the client hex-encodes the `SignDoc` bytes before passing
+/// them to the wallet. The wallet signs the UTF-8-safe hex string bytes.
+///
+/// This function reproduces the same hex encoding on the chain side:
+/// it hex-encodes `sign_doc_bytes` and verifies the Ed25519 signature
+/// against the resulting ASCII byte string.
+fn verify_ed25519_hex_encoded(
+    key_bytes: &[u8; 32],
+    sign_doc_bytes: &[u8],
+    sig_bytes: &[u8],
+) -> Result<(), SigningError> {
+    let hex_encoded = hex::encode(sign_doc_bytes);
+    morpheum_primitives::crypto::verify_ed25519_bytes(key_bytes, hex_encoded.as_bytes(), sig_bytes)
+        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(
             alloc::format!("{e}")
         )))
 }
