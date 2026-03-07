@@ -2,3 +2,5 @@
 /target
 /flattened_code.md
 /flatten_code.sh
+.cargo/
+/flattened
