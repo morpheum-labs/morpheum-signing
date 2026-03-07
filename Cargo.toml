@@ -20,7 +20,7 @@ readme = "README.md"
 
 [workspace.dependencies]
 # Core primitives
-morpheum-primitives = { path = "../mormcore/crates/primitives", features = ["full-protos"] }
+morpheum-primitives = { path = "../morpheum-primitives", features = ["full-protos"] }
 
 # Cryptogram workspace — single source of truth for crypto, HD, standards
 morpheum-crypto = { path = "../cryptogram/crates/morpheum-crypto", features = ["bls", "mldsa44"] }
