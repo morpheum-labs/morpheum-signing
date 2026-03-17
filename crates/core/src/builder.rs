@@ -54,6 +54,7 @@ pub struct TxBuilder<S: Signer> {
     messages: Vec<crate::proto::Any>, // ← ONLY generic Any
     signing_options: SigningOptions,
     nonce_provider: Option<BoxedNonceProvider>,
+    manual_nonce: Option<Nonce>,
     #[allow(dead_code)]
     address_mapper: Box<dyn AddressMapper>,
     wallet_adapter: Option<BoxedWalletAdapter>,
@@ -90,6 +91,7 @@ impl<S: Signer> TxBuilder<S> {
             messages: Vec::new(),
             signing_options: SigningOptions::new(),
             nonce_provider: None,
+            manual_nonce: None,
             address_mapper: Box::new(DefaultAddressMapper),
             wallet_adapter: None,
             trading_key_claim: None,
@@ -160,6 +162,17 @@ impl<S: Signer> TxBuilder<S> {
     }
 
     // ==================== STRATEGIES ====================
+
+    /// Sets a pre-built nonce directly, bypassing the nonce provider.
+    ///
+    /// Takes precedence over any configured `NonceProvider`. Useful when the
+    /// caller has already queried the nonce state (e.g. via gRPC) and wants
+    /// to avoid a second round-trip.
+    #[must_use]
+    pub fn with_nonce(mut self, nonce: Nonce) -> Self {
+        self.manual_nonce = Some(nonce);
+        self
+    }
 
     /// Injects a nonce provider strategy (Sentry, AgentPortal, etc.).
     #[must_use]
@@ -243,11 +256,12 @@ impl<S: Signer> TxBuilder<S> {
             ));
         }
 
-        // 1. Resolve nonce
-        let nonce = if let Some(provider) = &self.nonce_provider {
+        // 1. Resolve nonce: manual > provider > default fallback
+        let nonce = if let Some(nonce) = self.manual_nonce {
+            nonce
+        } else if let Some(provider) = &self.nonce_provider {
             provider.next_nonce(&self.signer.account_id()).await?
         } else {
-            // Default fallback (for tests or offline signing)
             Nonce {
                 monotonic: 0,
                 ts_ms: 0,
