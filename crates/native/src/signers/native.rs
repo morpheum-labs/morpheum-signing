@@ -72,6 +72,16 @@ impl NativeSigner {
 
         Ok(signer)
     }
+
+    /// Signs arbitrary bytes (e.g. claim digest for TradingKeyClaim).
+    ///
+    /// Use for signing message digests outside of the standard SignDoc flow,
+    /// such as when building `TradingKeyClaim` or other custom signatures.
+    #[must_use]
+    pub fn sign_raw(&self, message: &[u8]) -> Signature {
+        let sig = self.signing_key.sign(message);
+        Signature::Ed25519(sig.to_bytes())
+    }
 }
 
 #[async_trait]

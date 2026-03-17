@@ -19,6 +19,23 @@ use crate::{
     proto::tx::v1::{
         self as tx, AuthInfo, ModeInfo, Nonce, SignDoc, SignerInfo, Tx, TxBody, TxRaw,
     },
+};
+
+/// Nonce provider that always returns a fixed nonce (for pre-queried nonces).
+struct FixedNonceProvider(Nonce);
+
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+impl NonceProvider for FixedNonceProvider {
+    async fn next_nonce(&self, _account_id: &crate::types::AccountId) -> Result<Nonce, SigningError> {
+        Ok(self.0.clone())
+    }
+    fn strategy_name(&self) -> &'static str {
+        "fixed_nonce"
+    }
+}
+
+use crate::{
     signer::Signer,
     types::{SignedTx, SigningOptions},
     wallet_adapter::{BoxedWalletAdapter, WalletAdapter},
@@ -148,6 +165,16 @@ impl<S: Signer> TxBuilder<S> {
     #[must_use]
     pub fn with_nonce_provider(mut self, provider: impl NonceProvider + 'static) -> Self {
         self.nonce_provider = Some(Box::new(provider));
+        self
+    }
+
+    /// Sets a pre-built nonce directly, bypassing any nonce provider.
+    ///
+    /// Takes precedence over any configured `NonceProvider`. Use when the
+    /// caller has already queried the nonce state (e.g. via gRPC).
+    #[must_use]
+    pub fn with_nonce(mut self, nonce: Nonce) -> Self {
+        self.nonce_provider = Some(Box::new(FixedNonceProvider(nonce)));
         self
     }
 

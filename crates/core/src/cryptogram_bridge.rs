@@ -140,6 +140,7 @@ pub fn sig_type_to_wallet_type(st: mst::SigType) -> Option<WalletType> {
         SigType::Ed25519 => Some(WalletType::Native),
         SigType::EcdsaLegacyEthereum
         | SigType::EcdsaLegacy
+        | SigType::EcdsaLegacyBsc
         | SigType::Keccak256
         | SigType::EcdsaLegacyBitcoin
         | SigType::EcdsaSegwit
