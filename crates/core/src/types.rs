@@ -171,15 +171,12 @@ impl PublicKey {
         use crate::error::{CryptoError, SigningError};
 
         match any.type_url.as_str() {
-            "/cosmos.crypto.ed25519.PubKey" => {
+            "/morpheum.crypto.ed25519.PubKey" | "/cosmos.crypto.ed25519.PubKey" => {
                 let bytes: [u8; 32] = any.value.as_slice().try_into()
                     .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
                 Ok(Self::Ed25519(bytes))
             }
-            "/cosmos.crypto.secp256k1.PubKey" => {
-                // Dispatch on length to support both:
-                //   - 33 bytes: SEC1-compressed secp256k1 public key (standard ECDSA)
-                //   - 20 bytes: raw EVM address (for EIP-191 personal_sign ecrecover)
+            "/morpheum.crypto.secp256k1.PubKey" | "/cosmos.crypto.secp256k1.PubKey" => {
                 match any.value.len() {
                     33 => {
                         let bytes: [u8; 33] = any.value.as_slice().try_into().unwrap();
@@ -235,8 +232,8 @@ impl PublicKey {
     #[must_use]
     pub fn type_url(&self) -> &'static str {
         match self {
-            Self::Ed25519(_) | Self::Agent(_) => "/cosmos.crypto.ed25519.PubKey",
-            Self::Secp256k1(_) | Self::EvmAddress(_) => "/cosmos.crypto.secp256k1.PubKey",
+            Self::Ed25519(_) | Self::Agent(_) => "/morpheum.crypto.ed25519.PubKey",
+            Self::Secp256k1(_) | Self::EvmAddress(_) => "/morpheum.crypto.secp256k1.PubKey",
             Self::Schnorr(_) => "/morpheum.crypto.schnorr.PubKey",
         }
     }

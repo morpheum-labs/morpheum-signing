@@ -284,7 +284,7 @@ impl<S: Signer> TxBuilder<S> {
         #[cfg(not(feature = "dynamic-signer-info"))]
         let mut signer_info = SignerInfo {
             public_key: Some(crate::proto::Any {
-                type_url: "/cosmos.crypto.ed25519.PubKey".to_string(),
+                type_url: "/morpheum.crypto.ed25519.PubKey".to_string(),
                 value: Vec::new(),
             }),
             mode_info: Some(ModeInfo {

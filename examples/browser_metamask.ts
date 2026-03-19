@@ -41,7 +41,7 @@ async function main() {
     try {
         // Sign using the fully generic API.
         // The SignerInfo will contain:
-        //   - public_key: /cosmos.crypto.secp256k1.PubKey (33 bytes, compressed)
+        //   - public_key: /morpheum.crypto.secp256k1.PubKey (33 bytes, compressed)
         //   - mode_info: SIGN_MODE_SECP256K1
         const signedTx = await builder
             .add_message(

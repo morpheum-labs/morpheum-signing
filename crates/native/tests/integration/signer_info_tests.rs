@@ -39,7 +39,7 @@ fn test_native_signer_public_key_is_ed25519() {
 fn test_native_signer_public_key_proto_type_url() {
     let signer = NativeSigner::from_seed(&SEED_A);
     let proto = signer.public_key_proto();
-    assert_eq!(proto.type_url, "/cosmos.crypto.ed25519.PubKey");
+    assert_eq!(proto.type_url, "/morpheum.crypto.ed25519.PubKey");
     assert!(!proto.value.is_empty(), "Proto value should contain key bytes");
 }
 
@@ -69,7 +69,7 @@ fn test_agent_signer_sign_mode() {
 fn test_agent_signer_public_key_proto() {
     let signer = AgentSigner::new(&SEED_A, AccountId([0x11; 32]), None);
     let proto = signer.public_key_proto();
-    assert_eq!(proto.type_url, "/cosmos.crypto.ed25519.PubKey");
+    assert_eq!(proto.type_url, "/morpheum.crypto.ed25519.PubKey");
     assert!(!proto.value.is_empty());
 }
 
@@ -107,7 +107,7 @@ fn test_evm_signer_public_key_is_secp256k1() {
 fn test_evm_signer_public_key_proto_type_url() {
     let signer = EvmSigner::from_seed(&SEED_A);
     let proto = signer.public_key_proto();
-    assert_eq!(proto.type_url, "/cosmos.crypto.secp256k1.PubKey");
+    assert_eq!(proto.type_url, "/morpheum.crypto.secp256k1.PubKey");
     assert_eq!(proto.value.len(), 33);
 }
 
@@ -138,7 +138,7 @@ fn test_solana_signer_public_key_is_ed25519() {
 fn test_solana_signer_public_key_proto_type_url() {
     let signer = SolanaSigner::from_seed(&SEED_A);
     let proto = signer.public_key_proto();
-    assert_eq!(proto.type_url, "/cosmos.crypto.ed25519.PubKey");
+    assert_eq!(proto.type_url, "/morpheum.crypto.ed25519.PubKey");
     assert_eq!(proto.value.len(), 32);
 }
 

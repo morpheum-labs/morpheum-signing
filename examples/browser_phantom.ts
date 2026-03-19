@@ -40,7 +40,7 @@ async function main() {
     try {
         // Sign using the fully generic API.
         // The SignerInfo will contain:
-        //   - public_key: /cosmos.crypto.ed25519.PubKey (32 bytes)
+        //   - public_key: /morpheum.crypto.ed25519.PubKey (32 bytes)
         //   - mode_info: SIGN_MODE_ED25519
         const signedTx = await builder
             .add_message(
