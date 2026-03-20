@@ -29,6 +29,15 @@ pub struct EvmSigner {
     verifying_key: SecpVerifyingKey,
 }
 
+/// Standard Ethereum BIP-44 derivation path: `m/44'/60'/0'/0/0`.
+pub const EVM_DEFAULT_PATH: [u32; 5] = [
+    44 | 0x8000_0000,
+    60 | 0x8000_0000,
+    0x8000_0000,
+    0,
+    0,
+];
+
 impl EvmSigner {
     /// Creates a new `EvmSigner` from a 32-byte seed.
     ///
@@ -41,6 +50,58 @@ impl EvmSigner {
             signing_key,
             verifying_key,
         }
+    }
+
+    /// Creates a new `EvmSigner` from a BIP-39 mnemonic phrase.
+    ///
+    /// Derives the secp256k1 key at the standard Ethereum path `m/44'/60'/0'/0/0`
+    /// via BIP-32 HD derivation (HMAC-SHA512 based).
+    ///
+    /// # Parameters
+    ///
+    /// - `mnemonic`: A valid BIP-39 mnemonic (12, 15, 18, 21, or 24 words).
+    /// - `passphrase`: BIP-39 passphrase. Use `""` for the default.
+    #[cfg(feature = "bip39")]
+    pub fn from_mnemonic(mnemonic: &str, passphrase: &str) -> Result<Self, SigningError> {
+        Self::from_mnemonic_with_index(mnemonic, passphrase, 0)
+    }
+
+    /// Like [`from_mnemonic`](Self::from_mnemonic) but derives at
+    /// `m/44'/60'/0'/0/{index}`, allowing multiple accounts from one mnemonic.
+    #[cfg(feature = "bip39")]
+    pub fn from_mnemonic_with_index(
+        mnemonic: &str,
+        passphrase: &str,
+        index: u32,
+    ) -> Result<Self, SigningError> {
+        use zeroize::Zeroize;
+
+        let parsed = bip39::Mnemonic::parse(mnemonic)
+            .map_err(|e| SigningError::invalid_key(format!("invalid BIP-39 mnemonic: {e}")))?;
+
+        let bip39_seed = parsed.to_seed(passphrase);
+        let path = [
+            44 | 0x8000_0000,
+            60 | 0x8000_0000,
+            0x8000_0000,
+            0,
+            index,
+        ];
+
+        let mut key_bytes = bip32_derive(&bip39_seed, &path)
+            .map_err(|e| SigningError::invalid_key(format!("BIP-32 derivation failed: {e}")))?;
+
+        let signer = Self::from_seed(&key_bytes);
+        key_bytes.zeroize();
+
+        Ok(signer)
+    }
+
+    /// Returns the raw 32-byte private key.
+    ///
+    /// The caller is responsible for zeroizing this material after use.
+    pub fn private_key_bytes(&self) -> [u8; 32] {
+        self.signing_key.to_bytes().into()
     }
 }
 
@@ -81,3 +142,64 @@ impl Signer for EvmSigner {
 
 // k256 `SigningKey` handles its own zeroization on `Drop`.
 impl ZeroizeOnDrop for EvmSigner {}
+
+// ── BIP-32 HD key derivation (HMAC-SHA512) ──────────────────────────
+
+/// Derives a 32-byte child private key from a BIP-39 seed using BIP-32 HD
+/// derivation. Supports both hardened (index >= 0x8000_0000) and normal child
+/// key derivation.
+fn bip32_derive(seed: &[u8], path: &[u32]) -> Result<[u8; 32], &'static str> {
+    use hmac::{Hmac, Mac};
+    use k256::elliptic_curve::PrimeField;
+    use sha2::Sha512;
+
+    type HmacSha512 = Hmac<Sha512>;
+
+    let mut mac =
+        HmacSha512::new_from_slice(b"Bitcoin seed").map_err(|_| "HMAC key creation failed")?;
+    mac.update(seed);
+    let result = mac.finalize().into_bytes();
+
+    let mut key = [0u8; 32];
+    let mut chain_code = [0u8; 32];
+    key.copy_from_slice(&result[..32]);
+    chain_code.copy_from_slice(&result[32..]);
+
+    for &index in path {
+        let mut mac =
+            HmacSha512::new_from_slice(&chain_code).map_err(|_| "HMAC key creation failed")?;
+
+        if index & 0x8000_0000 != 0 {
+            // Hardened child: 0x00 || key || index
+            mac.update(&[0x00]);
+            mac.update(&key);
+        } else {
+            // Normal child: compressed_pubkey || index
+            let sk = SecpSigningKey::from_slice(&key).map_err(|_| "invalid derived key")?;
+            let pk = sk.verifying_key().to_encoded_point(true);
+            mac.update(pk.as_bytes());
+        }
+        mac.update(&index.to_be_bytes());
+
+        let result = mac.finalize().into_bytes();
+        let il = &result[..32];
+
+        // child_key = parse256(IL) + parent_key (mod n)
+        let parent: k256::Scalar = Option::from(k256::Scalar::from_repr(key.into()))
+            .ok_or("invalid parent key scalar")?;
+
+        let mut il_arr = [0u8; 32];
+        il_arr.copy_from_slice(il);
+        let tweak: k256::Scalar = Option::from(k256::Scalar::from_repr(il_arr.into()))
+            .ok_or("invalid tweak scalar")?;
+
+        let child = parent + tweak;
+        if bool::from(child.is_zero()) {
+            return Err("derived key is zero");
+        }
+        key = child.to_repr().into();
+        chain_code.copy_from_slice(&result[32..]);
+    }
+
+    Ok(key)
+}

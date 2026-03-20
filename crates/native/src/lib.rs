@@ -37,7 +37,9 @@ pub use signers::{
     NativeSigner,
     AgentSigner,
     EvmSigner,
+    EVM_DEFAULT_PATH,
     SolanaSigner,
+    SOLANA_DEFAULT_PATH,
     BitcoinSigner,
 };
 

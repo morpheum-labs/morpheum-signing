@@ -26,8 +26,9 @@ bip39 = { workspace = true, optional = true }
 # Protobuf (for Message::encode_to_vec in signers)
 prost = { workspace = true }
 
-# Hashing (for BIP-340 Schnorr message digests)
+# Hashing (for BIP-340 Schnorr message digests and BIP-32 HD derivation)
 sha2 = { workspace = true }
+hmac = { workspace = true }
 
 # Security & serialization
 zeroize = { workspace = true }

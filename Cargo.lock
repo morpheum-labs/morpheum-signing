@@ -2542,6 +2542,7 @@ dependencies = [
  "bitcoin",
  "ed25519-dalek",
  "hex",
+ "hmac",
  "k256",
  "morpheum-crypto",
  "morpheum-signing-core",

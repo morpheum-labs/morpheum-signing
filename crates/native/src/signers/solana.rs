@@ -28,6 +28,16 @@ use morpheum_signing_core::{
     types::{PublicKey, Signature, WalletType},
 };
 
+/// Standard Solana BIP-44 derivation path: `m/44'/501'/0'/0'`.
+///
+/// All segments are hardened, per the SLIP-0010 Ed25519 requirement.
+pub const SOLANA_DEFAULT_PATH: [u32; 4] = [
+    44 | 0x8000_0000,
+    501 | 0x8000_0000,
+    0x8000_0000,
+    0x8000_0000,
+];
+
 /// Local ed25519 signer optimized for Solana.
 ///
 /// Holds a standard 32-byte ed25519 private key (seed). This is the canonical
@@ -55,6 +65,62 @@ impl SolanaSigner {
             signing_key,
             verifying_key,
         }
+    }
+
+    /// Creates a new `SolanaSigner` from a BIP-39 mnemonic phrase.
+    ///
+    /// Derives the Ed25519 key at the standard Solana path `m/44'/501'/0'/0'`
+    /// via SLIP-0010 HD derivation (HMAC-SHA512 based, hardened-only).
+    ///
+    /// # Parameters
+    ///
+    /// - `mnemonic`: A valid BIP-39 mnemonic (12, 15, 18, 21, or 24 words).
+    /// - `passphrase`: BIP-39 passphrase. Use `""` for the default.
+    #[cfg(feature = "bip39")]
+    pub fn from_mnemonic(mnemonic: &str, passphrase: &str) -> Result<Self, SigningError> {
+        Self::from_mnemonic_with_index(mnemonic, passphrase, 0)
+    }
+
+    /// Like [`from_mnemonic`](Self::from_mnemonic) but derives at
+    /// `m/44'/501'/{index}'/0'`, allowing multiple accounts from one mnemonic.
+    #[cfg(feature = "bip39")]
+    pub fn from_mnemonic_with_index(
+        mnemonic: &str,
+        passphrase: &str,
+        index: u32,
+    ) -> Result<Self, SigningError> {
+        use zeroize::Zeroize;
+
+        let parsed = bip39::Mnemonic::parse(mnemonic)
+            .map_err(|e| SigningError::invalid_key(format!("invalid BIP-39 mnemonic: {e}")))?;
+
+        let bip39_seed = parsed.to_seed(passphrase);
+        let path = [
+            44 | 0x8000_0000,
+            501 | 0x8000_0000,
+            index | 0x8000_0000,
+            0x8000_0000,
+        ];
+
+        let mut key_bytes = slip0010_derive(&bip39_seed, &path)
+            .map_err(|e| SigningError::invalid_key(format!("SLIP-0010 derivation failed: {e}")))?;
+
+        let signer = Self::from_seed(&key_bytes);
+        key_bytes.zeroize();
+
+        Ok(signer)
+    }
+
+    /// Returns the raw 32-byte ed25519 public key (Solana address bytes).
+    pub fn public_key_bytes(&self) -> [u8; 32] {
+        self.verifying_key.to_bytes()
+    }
+
+    /// Returns the raw 32-byte private key (seed).
+    ///
+    /// The caller is responsible for zeroizing this material after use.
+    pub fn private_key_bytes(&self) -> [u8; 32] {
+        self.signing_key.to_bytes()
     }
 }
 
@@ -90,3 +156,43 @@ impl Signer for SolanaSigner {
 
 // `ed25519_dalek::SigningKey` handles its own zeroization on `Drop`.
 impl ZeroizeOnDrop for SolanaSigner {}
+
+// ── SLIP-0010 Ed25519 HD key derivation (hardened-only) ─────────────
+
+/// Derives a 32-byte child private key from a BIP-39 seed using SLIP-0010
+/// for Ed25519. Only hardened derivation is supported (all path indices
+/// must have the 0x8000_0000 bit set).
+fn slip0010_derive(seed: &[u8], path: &[u32]) -> Result<[u8; 32], &'static str> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha512;
+
+    type HmacSha512 = Hmac<Sha512>;
+
+    let mut mac =
+        HmacSha512::new_from_slice(b"ed25519 seed").map_err(|_| "HMAC key creation failed")?;
+    mac.update(seed);
+    let result = mac.finalize().into_bytes();
+
+    let mut key = [0u8; 32];
+    let mut chain_code = [0u8; 32];
+    key.copy_from_slice(&result[..32]);
+    chain_code.copy_from_slice(&result[32..]);
+
+    for &index in path {
+        if index & 0x8000_0000 == 0 {
+            return Err("SLIP-0010 Ed25519 only supports hardened derivation");
+        }
+
+        let mut mac =
+            HmacSha512::new_from_slice(&chain_code).map_err(|_| "HMAC key creation failed")?;
+        mac.update(&[0x00]);
+        mac.update(&key);
+        mac.update(&index.to_be_bytes());
+
+        let result = mac.finalize().into_bytes();
+        key.copy_from_slice(&result[..32]);
+        chain_code.copy_from_slice(&result[32..]);
+    }
+
+    Ok(key)
+}

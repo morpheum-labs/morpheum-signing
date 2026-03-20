@@ -18,6 +18,6 @@ mod bitcoin;
 // Re-exports (short aliases are defined in lib.rs for top-level ergonomics)
 pub use native::NativeSigner;
 pub use agent::AgentSigner;
-pub use evm::EvmSigner;
-pub use solana::SolanaSigner;
+pub use evm::{EvmSigner, EVM_DEFAULT_PATH};
+pub use solana::{SolanaSigner, SOLANA_DEFAULT_PATH};
 pub use bitcoin::BitcoinSigner;
