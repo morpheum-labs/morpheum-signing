@@ -58,7 +58,9 @@ impl TaprootAdapter {
     /// Creates a new Taproot adapter.
     #[must_use]
     pub const fn new() -> Self {
-        Self { cached_address: None }
+        Self {
+            cached_address: None,
+        }
     }
 }
 
@@ -69,9 +71,9 @@ impl WalletAdapter for TaprootAdapter {
     /// The `SignDoc` is hashed (SHA-256) and prefixed with a clear message
     /// for security, determinism, and excellent user experience in the wallet popup.
     async fn request_signature(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
-        let unisat = UNISAT
-            .as_ref()
-            .ok_or_else(|| SigningError::wallet_adapter("Unisat not detected (window.unisat missing)"))?;
+        let unisat = UNISAT.as_ref().ok_or_else(|| {
+            SigningError::wallet_adapter("Unisat not detected (window.unisat missing)")
+        })?;
 
         // 1. Ensure wallet is connected and cache address
         let _address = self.ensure_connected(unisat).await?;
@@ -81,18 +83,26 @@ impl WalletAdapter for TaprootAdapter {
 
         // 3. Prepare options (bip322-simple is the standard for Taproot message signing)
         let options = js_sys::Object::new();
-        Reflect::set(&options, &JsValue::from("type"), &JsValue::from("bip322-simple"))
-            .map_err(|_| SigningError::wallet_adapter("failed to set signing options"))?;
+        Reflect::set(
+            &options,
+            &JsValue::from("type"),
+            &JsValue::from("bip322-simple"),
+        )
+        .map_err(|_| SigningError::wallet_adapter("failed to set signing options"))?;
 
         // 4. Request signature
         let result = JsFuture::from(unisat.sign_message(&message, &options))
             .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Unisat signMessage failed: {:?}", e)))?;
+            .map_err(|e| {
+                SigningError::wallet_adapter(format!("Unisat signMessage failed: {:?}", e))
+            })?;
 
         // 5. Extract signature (Unisat returns base64 or hex — we handle both)
         let sig_value = Reflect::get(&result, &JsValue::from("signature"))
             .or_else(|_| Ok(result.clone()))
-            .map_err(|_| SigningError::wallet_adapter("Unisat response missing 'signature' field"))?;
+            .map_err(|_| {
+                SigningError::wallet_adapter("Unisat response missing 'signature' field")
+            })?;
 
         let sig_str: String = sig_value
             .as_string()
@@ -104,7 +114,9 @@ impl WalletAdapter for TaprootAdapter {
         } else {
             base64::decode(&sig_str)
         }
-            .map_err(|e| SigningError::wallet_adapter(format!("Invalid signature encoding from Unisat: {}", e)))?;
+        .map_err(|e| {
+            SigningError::wallet_adapter(format!("Invalid signature encoding from Unisat: {}", e))
+        })?;
 
         if sig_bytes.len() != 64 {
             return Err(SigningError::wallet_adapter(format!(
@@ -141,9 +153,9 @@ impl TaprootAdapter {
             return Ok(addr.clone());
         }
 
-        let result = JsFuture::from(unisat.get_public_key())
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Unisat getPublicKey failed: {:?}", e)))?;
+        let result = JsFuture::from(unisat.get_public_key()).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("Unisat getPublicKey failed: {:?}", e))
+        })?;
 
         let address: String = result
             .as_string()

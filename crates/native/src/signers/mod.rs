@@ -9,15 +9,15 @@
 //!
 //! All signers are re-exported at this level for ergonomic use.
 
-mod native;     // ← renamed from human
 mod agent;
-mod evm;
-mod solana;
 mod bitcoin;
+mod evm;
+mod native; // ← renamed from human
+mod solana;
 
 // Re-exports (short aliases are defined in lib.rs for top-level ergonomics)
-pub use native::NativeSigner;
 pub use agent::AgentSigner;
-pub use evm::{EvmSigner, EVM_DEFAULT_PATH};
-pub use solana::{SolanaSigner, SOLANA_DEFAULT_PATH};
 pub use bitcoin::BitcoinSigner;
+pub use evm::{EvmSigner, EVM_DEFAULT_PATH};
+pub use native::NativeSigner;
+pub use solana::{SolanaSigner, SOLANA_DEFAULT_PATH};

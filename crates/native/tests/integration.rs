@@ -14,23 +14,23 @@
 //!
 //! Run with: `cargo test -p morpheum-signing-native --test integration --all-features`
 
-#[path = "integration/common.rs"]
-mod common;
-#[path = "integration/native_flow.rs"]
-mod native_flow;
 #[path = "integration/agent_flow.rs"]
 mod agent_flow;
-#[path = "integration/multi_chain.rs"]
-mod multi_chain;
-#[path = "integration/error_cases.rs"]
-mod error_cases;
 #[path = "integration/claim_tests.rs"]
 mod claim_tests;
+#[path = "integration/common.rs"]
+mod common;
+#[path = "integration/cross_crate_signing.rs"]
+mod cross_crate_signing;
+#[path = "integration/error_cases.rs"]
+mod error_cases;
+#[path = "integration/multi_chain.rs"]
+mod multi_chain;
+#[path = "integration/native_flow.rs"]
+mod native_flow;
+#[path = "integration/security_tests.rs"]
+mod security_tests;
 #[path = "integration/signer_info_tests.rs"]
 mod signer_info_tests;
 #[path = "integration/signing_flows.rs"]
 mod signing_flows;
-#[path = "integration/security_tests.rs"]
-mod security_tests;
-#[path = "integration/cross_crate_signing.rs"]
-mod cross_crate_signing;

@@ -5,10 +5,7 @@
 
 use async_trait::async_trait;
 use morpheum_signing_core::{
-    error::SigningError,
-    nonce::NonceProvider,
-    prelude::*,
-    proto::tx::v1::Nonce,
+    error::SigningError, nonce::NonceProvider, prelude::*, proto::tx::v1::Nonce,
 };
 
 /// Deterministic nonce provider used throughout tests.

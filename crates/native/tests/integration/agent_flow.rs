@@ -27,7 +27,10 @@ pub async fn test_agent_signing_flow() {
         .await
         .expect("Agent signing failed");
 
-    assert!(!signed_tx.raw_bytes.is_empty(), "Signed tx should not be empty");
+    assert!(
+        !signed_tx.raw_bytes.is_empty(),
+        "Signed tx should not be empty"
+    );
     assert_eq!(
         signed_tx.tx.nonce.as_ref().map_or(0, |n| n.sub),
         0,
@@ -83,5 +86,8 @@ pub async fn test_agent_different_seeds_produce_different_signatures() {
         .await
         .expect("Sign 2 failed");
 
-    assert_ne!(tx1.tx.signatures, tx2.tx.signatures, "Different keys must produce different sigs");
+    assert_ne!(
+        tx1.tx.signatures, tx2.tx.signatures,
+        "Different keys must produce different sigs"
+    );
 }

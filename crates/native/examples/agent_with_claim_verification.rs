@@ -35,23 +35,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 3. Build the TradingKeyClaim ─────────────────────────────────────
     // In production, the issuer signs the claim digest and provides the signature.
-    let now_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs();
+    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
     let claim = VcClaimBuilder::new()
         .issuer(issuer_account_id.clone())
         .subject(agent_account_id.clone())
-        .permissions(0x01)                             // TRADE permission
-        .max_daily_usd(500_000)                        // $500k daily limit
-        .expiry(now_secs + 86_400)                     // 24 hours from now
-        .nonce_sub_range(5000, 6000)                   // 1000 parallel operations
-        .signature(Signature::Ed25519([1u8; 64]))      // Placeholder — see note below
+        .permissions(0x01) // TRADE permission
+        .max_daily_usd(500_000) // $500k daily limit
+        .expiry(now_secs + 86_400) // 24 hours from now
+        .nonce_sub_range(5000, 6000) // 1000 parallel operations
+        .signature(Signature::Ed25519([1u8; 64])) // Placeholder — see note below
         .build(now_secs)?;
 
     println!("  Claim built successfully");
     println!("    Sub-range size: {}", claim.sub_range_size());
-    println!("    Expires at:     {} (Unix seconds)", claim.expiry_timestamp);
+    println!(
+        "    Expires at:     {} (Unix seconds)",
+        claim.expiry_timestamp
+    );
 
     // ── 4. Compute claim digest (for offline signature verification) ─────
     // The digest is the SHA-256 hash of the unsigned claim fields.
@@ -80,11 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── 6. Create the AgentSigner and sign ───────────────────────────────
-    let agent_signer = AgentSigner::new(
-        &agent_seed,
-        agent_account_id,
-        Some(claim.clone()),
-    );
+    let agent_signer = AgentSigner::new(&agent_seed, agent_account_id, Some(claim.clone()));
 
     let market_any = Any {
         type_url: "type.googleapis.com/market.v1.MsgCreateMarketRequest".to_string(),

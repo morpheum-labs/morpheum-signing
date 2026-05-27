@@ -3,10 +3,7 @@
 //!
 //! This directly addresses the audit's **Critical Issue #1**: hardcoded ed25519.
 
-use morpheum_signing_core::{
-    prelude::*,
-    signer::Signer,
-};
+use morpheum_signing_core::{prelude::*, signer::Signer};
 use morpheum_signing_native::prelude::*;
 
 const SEED_A: [u8; 32] = [1u8; 32];
@@ -40,7 +37,10 @@ fn test_native_signer_public_key_proto_type_url() {
     let signer = NativeSigner::from_seed(&SEED_A);
     let proto = signer.public_key_proto();
     assert_eq!(proto.type_url, "/morpheum.crypto.ed25519.PubKey");
-    assert!(!proto.value.is_empty(), "Proto value should contain key bytes");
+    assert!(
+        !proto.value.is_empty(),
+        "Proto value should contain key bytes"
+    );
 }
 
 #[test]
@@ -77,7 +77,11 @@ fn test_agent_signer_public_key_proto() {
 fn test_agent_signer_uses_provided_account_id() {
     let custom_id = AccountId([0xAA; 32]);
     let signer = AgentSigner::new(&SEED_A, custom_id.clone(), None);
-    assert_eq!(signer.account_id(), custom_id, "Agent should use provided AccountId");
+    assert_eq!(
+        signer.account_id(),
+        custom_id,
+        "Agent should use provided AccountId"
+    );
 }
 
 // ==================== EVM SIGNER ====================
@@ -98,7 +102,9 @@ fn test_evm_signer_sign_mode() {
 fn test_evm_signer_public_key_is_secp256k1() {
     let signer = EvmSigner::from_seed(&SEED_A);
     match signer.public_key() {
-        PublicKey::Secp256k1(bytes) => assert_eq!(bytes.len(), 33, "Compressed secp256k1 key is 33 bytes"),
+        PublicKey::Secp256k1(bytes) => {
+            assert_eq!(bytes.len(), 33, "Compressed secp256k1 key is 33 bytes")
+        }
         other => panic!("Expected Secp256k1 pubkey, got: {other:?}"),
     }
 }
@@ -191,8 +197,14 @@ fn test_all_signers_return_non_empty_proto_value() {
         ("bitcoin", &btc as &dyn Signer),
     ] {
         let proto = signer.public_key_proto();
-        assert!(!proto.type_url.is_empty(), "{name}: type_url should not be empty");
-        assert!(!proto.value.is_empty(), "{name}: proto value should not be empty");
+        assert!(
+            !proto.type_url.is_empty(),
+            "{name}: type_url should not be empty"
+        );
+        assert!(
+            !proto.value.is_empty(),
+            "{name}: proto value should not be empty"
+        );
     }
 }
 

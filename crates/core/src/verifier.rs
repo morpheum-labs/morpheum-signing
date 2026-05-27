@@ -71,7 +71,6 @@ pub struct VerifiedTx {
     pub nonce: Option<tx::Nonce>,
 
     // ── Agent context (extracted from primary signer's SignerInfo) ──
-
     /// Agent DID string (e.g. `"did:agent:abc123…"`).
     ///
     /// Used by the auth hotpath for identity lookup and shard-affinity routing.
@@ -107,6 +106,12 @@ pub struct VerifiedTx {
 /// - `chain_id`: The chain identifier from node configuration.
 /// - `account_number`: The on-chain account number (for `SignDoc` reconstruction).
 ///   Use `0` if the chain does not enforce account-number binding.
+/// - `genesis_hash`: Raw genesis-block hash bytes of the verifying chain
+///   (Phase M3 — `O20` / `C12`). Bound into the reconstructed `SignDoc` so a
+///   valid signature on chain A cannot be replayed on chain B even when both
+///   share a `chain_id`. Pass an empty slice to preserve pre-fork behaviour
+///   (advisory-only); downstream policy gates strict enforcement via the
+///   runtime's fork version.
 /// - `now`: Current Unix timestamp in seconds (for `TradingKeyClaim` expiry).
 ///
 /// # Errors
@@ -120,14 +125,19 @@ pub fn verify_signed_tx(
     signed_tx: &SignedTx,
     chain_id: &str,
     account_number: u64,
+    genesis_hash: &[u8],
     now: u64,
 ) -> Result<VerifiedTx, SigningError> {
     let tx = &signed_tx.tx;
 
     // ── Extract and validate required transaction components ──
-    let body = tx.body.as_ref()
+    let body = tx
+        .body
+        .as_ref()
         .ok_or_else(|| SigningError::signing("transaction missing body"))?;
-    let auth_info = tx.auth_info.as_ref()
+    let auth_info = tx
+        .auth_info
+        .as_ref()
         .ok_or_else(|| SigningError::signing("transaction missing auth_info"))?;
 
     let signer_infos = &auth_info.signer_infos;
@@ -159,6 +169,7 @@ pub fn verify_signed_tx(
         auth_info_bytes,
         chain_id: chain_id.into(),
         account_number,
+        genesis_hash: genesis_hash.to_vec(),
     };
     let sign_doc_bytes = sign_doc.encode_to_vec();
 
@@ -170,10 +181,9 @@ pub fn verify_signed_tx(
 
     for (i, si) in signer_infos.iter().enumerate() {
         // 1. Parse public key from proto Any
-        let pk_any = si.public_key.as_ref()
-            .ok_or_else(|| SigningError::signing(alloc::format!(
-                "signer_info[{i}] missing public_key"
-            )))?;
+        let pk_any = si.public_key.as_ref().ok_or_else(|| {
+            SigningError::signing(alloc::format!("signer_info[{i}] missing public_key"))
+        })?;
         let pubkey = PublicKey::from_proto_any(pk_any)?;
 
         // 2. Determine sign mode from mode_info
@@ -251,24 +261,23 @@ fn verify_signature(
 ) -> Result<(), SigningError> {
     match (pubkey, mode) {
         // ── Ed25519 (Native, Solana, Agent) ──
-        (PublicKey::Ed25519(key_bytes) | PublicKey::Agent(key_bytes),
-         SignMode::Ed25519 | SignMode::GaslessEd25519) => {
-            verify_ed25519(key_bytes, sign_doc_bytes, sig_bytes)
-        }
+        (
+            PublicKey::Ed25519(key_bytes) | PublicKey::Agent(key_bytes),
+            SignMode::Ed25519 | SignMode::GaslessEd25519,
+        ) => verify_ed25519(key_bytes, sign_doc_bytes, sig_bytes),
 
         // ── Secp256k1 raw ECDSA (standard, pre-hashed) ──
-        (PublicKey::Secp256k1(key_bytes),
-         SignMode::Secp256k1 | SignMode::EcdsaLegacy | SignMode::Keccak256) => {
-            verify_secp256k1(key_bytes, sign_doc_bytes, sig_bytes)
-        }
+        (
+            PublicKey::Secp256k1(key_bytes),
+            SignMode::Secp256k1 | SignMode::EcdsaLegacy | SignMode::Keccak256,
+        ) => verify_secp256k1(key_bytes, sign_doc_bytes, sig_bytes),
 
         // ── EIP-191 personal_sign with full compressed public key ──
         //
         // When the client provides the full 33-byte compressed secp256k1 key
         // (e.g., from SDK or agent context where the key is known), we can
         // directly verify the ECDSA signature against the EIP-191 hash.
-        (PublicKey::Secp256k1(key_bytes),
-         SignMode::Eip191Personal) => {
+        (PublicKey::Secp256k1(key_bytes), SignMode::Eip191Personal) => {
             verify_eip191_personal(key_bytes, sign_doc_bytes, sig_bytes)
         }
 
@@ -278,8 +287,7 @@ fn verify_signature(
         // Ethereum address. The verifier recovers the public key from the
         // 65-byte signature (r‖s‖v), derives the EVM address from the
         // recovered key, and compares it to the expected address.
-        (PublicKey::EvmAddress(expected_addr),
-         SignMode::Eip191Personal) => {
+        (PublicKey::EvmAddress(expected_addr), SignMode::Eip191Personal) => {
             verify_eip191_ecrecover(expected_addr, sign_doc_bytes, sig_bytes)
         }
 
@@ -290,8 +298,7 @@ fn verify_signature(
         // SignDoc bytes before passing to the wallet, producing an ASCII
         // string that survives the UTF-8 round-trip losslessly.
         // We reproduce the same hex encoding here before Ed25519 verification.
-        (PublicKey::Ed25519(key_bytes) | PublicKey::Agent(key_bytes),
-         SignMode::SolanaOffchain) => {
+        (PublicKey::Ed25519(key_bytes) | PublicKey::Agent(key_bytes), SignMode::SolanaOffchain) => {
             verify_ed25519_hex_encoded(key_bytes, sign_doc_bytes, sig_bytes)
         }
 
@@ -311,9 +318,7 @@ fn verify_ed25519(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::verify_ed25519_bytes(key_bytes, message, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(
-            alloc::format!("{e}")
-        )))
+        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(alloc::format!("{e}"))))
 }
 
 /// Secp256k1 ECDSA signature verification — delegates to `morpheum_primitives::crypto`.
@@ -328,9 +333,7 @@ fn verify_secp256k1(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::verify_secp256k1_bytes(key_bytes, message, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
-            alloc::format!("{e}")
-        )))
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
 }
 
 /// EIP-191 `personal_sign` verification using `k256` + `sha3` (Keccak-256).
@@ -350,10 +353,7 @@ fn verify_eip191_personal(
     sign_doc_bytes: &[u8],
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
-    use k256::ecdsa::{
-        signature::hazmat::PrehashVerifier,
-        Signature as SecpSig, VerifyingKey,
-    };
+    use k256::ecdsa::{signature::hazmat::PrehashVerifier, Signature as SecpSig, VerifyingKey};
     use sha3::{Digest, Keccak256};
 
     // 1. Reconstruct the EIP-191 personal_sign hash.
@@ -368,10 +368,11 @@ fn verify_eip191_personal(
     };
 
     // 2. Parse the compressed secp256k1 public key (33 bytes).
-    let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
-            alloc::format!("invalid secp256k1 public key: {e}")
-        )))?;
+    let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes).map_err(|e| {
+        SigningError::Crypto(CryptoError::Secp256k1(alloc::format!(
+            "invalid secp256k1 public key: {e}"
+        )))
+    })?;
 
     // 3. Extract the 64-byte ECDSA signature (r || s).
     //    MetaMask returns 65 bytes (r:32 + s:32 + v:1); strip the recovery
@@ -379,18 +380,22 @@ fn verify_eip191_personal(
     let sig_data = match sig_bytes.len() {
         65 => &sig_bytes[..64],
         64 => sig_bytes,
-        len => return Err(SigningError::Crypto(CryptoError::Secp256k1(
-            alloc::format!("EIP-191 signature must be 64 or 65 bytes, got {len}")
-        ))),
+        len => {
+            return Err(SigningError::Crypto(CryptoError::Secp256k1(
+                alloc::format!("EIP-191 signature must be 64 or 65 bytes, got {len}"),
+            )))
+        }
     };
 
-    let signature = SecpSig::from_slice(sig_data)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
-            alloc::format!("invalid EIP-191 secp256k1 signature: {e}")
-        )))?;
+    let signature = SecpSig::from_slice(sig_data).map_err(|e| {
+        SigningError::Crypto(CryptoError::Secp256k1(alloc::format!(
+            "invalid EIP-191 secp256k1 signature: {e}"
+        )))
+    })?;
 
     // 4. Verify the signature against the EIP-191 keccak256 hash.
-    verifying_key.verify_prehash(&hash, &signature)
+    verifying_key
+        .verify_prehash(&hash, &signature)
         .map_err(|_| SigningError::Crypto(CryptoError::SignatureVerificationFailed))
 }
 
@@ -406,9 +411,7 @@ fn verify_eip191_ecrecover(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::eip191_ecrecover_verify(expected_addr, sign_doc_bytes, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(
-            alloc::format!("{e}")
-        )))
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
 }
 
 /// Ed25519 verification for Solana off-chain messages (hex-encoded SignDoc).
@@ -429,9 +432,7 @@ fn verify_ed25519_hex_encoded(
 ) -> Result<(), SigningError> {
     let hex_encoded = hex::encode(sign_doc_bytes);
     morpheum_primitives::crypto::verify_ed25519_bytes(key_bytes, hex_encoded.as_bytes(), sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(
-            alloc::format!("{e}")
-        )))
+        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(alloc::format!("{e}"))))
 }
 
 // ============================================================================
@@ -443,12 +444,11 @@ fn verify_ed25519_hex_encoded(
 /// Falls back to `SignMode::Ed25519` if the mode cannot be determined
 /// (e.g., missing `mode_info` or unrecognized enum value).
 fn extract_sign_mode(si: &SignerInfo) -> SignMode {
-    si.mode_info.as_ref()
+    si.mode_info
+        .as_ref()
         .and_then(|mi| mi.sum.as_ref())
         .and_then(|sum| match sum {
-            tx::mode_info::Sum::Single(single) => {
-                SignMode::try_from(single.mode).ok()
-            }
+            tx::mode_info::Sum::Single(single) => SignMode::try_from(single.mode).ok(),
             _ => None,
         })
         .unwrap_or(SignMode::Ed25519)

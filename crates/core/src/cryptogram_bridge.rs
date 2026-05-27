@@ -34,17 +34,14 @@ pub mod crypto {
     use super::cc;
 
     pub use cc::{
-        ecdsa_sign, ecdsa_verify,
-        ed25519_sign, ed25519_verify, ed25519_public_key,
-        schnorr_sign, schnorr_verify, schnorr_x_only_pubkey,
-        eip191_sign, eip191_verify, eip191_digest,
-        generate_single_from_digest, verify_single_from_digest, verify_multi_from_digest,
-        CryptoError,
+        ecdsa_sign, ecdsa_verify, ed25519_public_key, ed25519_sign, ed25519_verify, eip191_digest,
+        eip191_sign, eip191_verify, generate_single_from_digest, schnorr_sign, schnorr_verify,
+        schnorr_x_only_pubkey, verify_multi_from_digest, verify_single_from_digest, CryptoError,
     };
 
     pub use cc::{
-        bls_sign_digest, bls_verify_digest, bls_aggregate_signatures,
-        bls_aggregate_public_keys, bls_verify_aggregated,
+        bls_aggregate_public_keys, bls_aggregate_signatures, bls_sign_digest,
+        bls_verify_aggregated, bls_verify_digest,
     };
 }
 
@@ -53,12 +50,8 @@ pub mod standards_types {
     use super::mst;
 
     pub use mst::{
-        SigType, ChainType, Domain,
-        Eip712Tx, Payload,
-        Signature as Eip712Signature,
-        Witness,
-        Address as ChainAddress,
-        AuthMethod,
+        Address as ChainAddress, AuthMethod, ChainType, Domain, Eip712Tx, Payload, SigType,
+        Signature as Eip712Signature, Witness,
     };
 }
 
@@ -66,9 +59,7 @@ pub mod standards_types {
 pub mod delegation {
     use super::ms;
 
-    pub use ms::auth::{
-        AgentDelegationManager, DelegationInfo, AuthError,
-    };
+    pub use ms::auth::{AgentDelegationManager, AuthError, DelegationInfo};
 }
 
 /// EIP-712 transaction signing and wallet construction.
@@ -76,11 +67,8 @@ pub mod eip712 {
     use super::ms;
 
     pub use ms::tx::{
-        TxSigner as Eip712TxSigner,
-        TxBuilder as Eip712TxBuilder,
-        Wallet as CryptogramWallet,
-        SignatureResult as Eip712SignatureResult,
-        hex_signature_to_base64,
+        hex_signature_to_base64, SignatureResult as Eip712SignatureResult,
+        TxBuilder as Eip712TxBuilder, TxSigner as Eip712TxSigner, Wallet as CryptogramWallet,
     };
 }
 
@@ -89,15 +77,9 @@ pub mod validation {
     use super::ms;
 
     pub use ms::validation::{
-        validate_address_for_chain,
-        validate_ethereum_address_lenient,
-        validate_morpheum_address,
-        validate_sui_address,
-        validate_ton_address,
-        validate_tron_address,
-        validate_polkadot_address,
-        validate_ada_address,
-        ValidationError,
+        validate_ada_address, validate_address_for_chain, validate_ethereum_address_lenient,
+        validate_morpheum_address, validate_polkadot_address, validate_sui_address,
+        validate_ton_address, validate_tron_address, ValidationError,
     };
 }
 
@@ -105,9 +87,7 @@ pub mod validation {
 pub mod nonce_mgmt {
     use super::ms;
 
-    pub use ms::auth::{
-        NonceManager, NonceInfo, NonceQueryTag,
-    };
+    pub use ms::auth::{NonceInfo, NonceManager, NonceQueryTag};
 }
 
 // ==================== TYPE CONVERSIONS ====================
@@ -286,12 +266,8 @@ impl From<cc::CryptoError> for SigningError {
             CE::InvalidSignatureLen(len) => SigningError::Crypto(CryptoError::Ed25519(format!(
                 "invalid signature length: expected 65, got {len}"
             ))),
-            CE::InvalidSignatureEncoding(msg) => {
-                SigningError::Crypto(CryptoError::Secp256k1(msg))
-            }
-            CE::RecoveryFailed => {
-                SigningError::Crypto(CryptoError::SignatureVerificationFailed)
-            }
+            CE::InvalidSignatureEncoding(msg) => SigningError::Crypto(CryptoError::Secp256k1(msg)),
+            CE::RecoveryFailed => SigningError::Crypto(CryptoError::SignatureVerificationFailed),
             CE::UnsupportedSigType(s) => {
                 SigningError::signing(format!("unsupported signature type: {s}"))
             }

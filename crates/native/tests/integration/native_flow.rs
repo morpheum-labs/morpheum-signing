@@ -24,14 +24,20 @@ pub async fn test_native_signing_flow() {
         .await
         .expect("Native signing failed");
 
-    assert!(!signed_tx.raw_bytes.is_empty(), "Signed tx should not be empty");
+    assert!(
+        !signed_tx.raw_bytes.is_empty(),
+        "Signed tx should not be empty"
+    );
     assert_eq!(
         signed_tx.tx.nonce.as_ref().map_or(0, |n| n.monotonic),
         42,
         "Sequential nonce not applied correctly"
     );
     assert_eq!(signed_tx.tx.nonce.as_ref().map_or(0, |n| n.sub), 0);
-    assert_eq!(signed_tx.tx.body.as_ref().unwrap().memo, "Native integration test");
+    assert_eq!(
+        signed_tx.tx.body.as_ref().unwrap().memo,
+        "Native integration test"
+    );
     assert_eq!(signed_tx.tx.body.as_ref().unwrap().messages.len(), 1);
 }
 
@@ -52,7 +58,14 @@ pub async fn test_native_default_nonce_fallback() {
         .await
         .expect("Should succeed with default nonce");
 
-    assert_eq!(signed_tx.tx.nonce.as_ref().map_or(u64::MAX, |n| n.monotonic), 0);
+    assert_eq!(
+        signed_tx
+            .tx
+            .nonce
+            .as_ref()
+            .map_or(u64::MAX, |n| n.monotonic),
+        0
+    );
 }
 
 #[tokio::test]

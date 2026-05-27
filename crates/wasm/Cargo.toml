@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 morpheum-signing-core = { path = "../core", default-features = false, features = ["std", "wasm"] }
+morpheum-signing-wasm-lib = { path = "../wasm-lib" }
 
 # Protobuf encoding (SignDoc::encode_to_vec, Any)
 prost = { workspace = true }

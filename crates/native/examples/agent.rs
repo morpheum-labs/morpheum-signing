@@ -17,25 +17,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Morpheum AI Agent Signing Example");
 
     // 1. Prepare Agent ID and TradingKey seed
-    let agent_id = AccountId([1u8; 32]);       // In production: derive from registered Agent DID
-    let trading_key_seed = [99u8; 32];         // In production: securely stored or derived
+    let agent_id = AccountId([1u8; 32]); // In production: derive from registered Agent DID
+    let trading_key_seed = [99u8; 32]; // In production: securely stored or derived
 
     // 2. Build TradingKeyClaim (VC delegation with nonce sub-range)
-    let now_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs();
+    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
     let trading_key_claim = VcClaimBuilder::new()
         .issuer(agent_id.clone())
         .subject(agent_id.clone())
-        .permissions(1 << 0)                       // TRADE permission
+        .permissions(1 << 0) // TRADE permission
         .max_daily_usd(1_000_000)
-        .expiry(now_secs + 86_400)                 // 24 hours from now
-        .nonce_sub_range(1000, 2000)               // Allows up to 1000 parallel operations
-        .signature(Signature::Ed25519([1u8; 64]))  // In production: real issuer signature
+        .expiry(now_secs + 86_400) // 24 hours from now
+        .nonce_sub_range(1000, 2000) // Allows up to 1000 parallel operations
+        .signature(Signature::Ed25519([1u8; 64])) // In production: real issuer signature
         .build(now_secs)?;
 
-    println!("  Claim sub-range size: {}", trading_key_claim.sub_range_size());
+    println!(
+        "  Claim sub-range size: {}",
+        trading_key_claim.sub_range_size()
+    );
 
     // 3. Create AgentSigner with the claim
     let signer = AgentSigner::new(&trading_key_seed, agent_id, Some(trading_key_claim.clone()));
@@ -59,8 +60,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 6. Output results
     println!("Agent transaction signed successfully with TradingKey + VC claim!");
     println!("  TxHash          : {}", signed_tx.txhash_hex());
-    println!("  Nonce sub-range : {}", signed_tx.tx.nonce.as_ref().map_or(0, |n| n.sub));
-    println!("  Memo            : {}", signed_tx.tx.body.as_ref().map_or("", |b| &b.memo));
+    println!(
+        "  Nonce sub-range : {}",
+        signed_tx.tx.nonce.as_ref().map_or(0, |n| n.sub)
+    );
+    println!(
+        "  Memo            : {}",
+        signed_tx.tx.body.as_ref().map_or("", |b| &b.memo)
+    );
     println!("  Raw bytes len   : {} bytes", signed_tx.raw_bytes().len());
 
     Ok(())

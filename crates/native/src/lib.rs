@@ -24,8 +24,8 @@ pub use morpheum_signing_core::*;
 
 // ==================== MODULES ====================
 
-mod signers;
 mod providers;
+mod signers;
 
 // Browser wallet adapters are WASM-only (js_sys / wasm_bindgen interop).
 #[cfg(target_arch = "wasm32")]
@@ -34,13 +34,8 @@ mod adapters;
 // ==================== SIGNERS (Local Keypairs) ====================
 
 pub use signers::{
-    NativeSigner,
-    AgentSigner,
-    EvmSigner,
-    EVM_DEFAULT_PATH,
-    SolanaSigner,
+    AgentSigner, BitcoinSigner, EvmSigner, NativeSigner, SolanaSigner, EVM_DEFAULT_PATH,
     SOLANA_DEFAULT_PATH,
-    BitcoinSigner,
 };
 
 /// Short alias for [`NativeSigner`].
@@ -57,11 +52,7 @@ pub type Bitcoin = BitcoinSigner;
 // ==================== ADAPTERS (Injected Wallets — WASM only) ====================
 
 #[cfg(target_arch = "wasm32")]
-pub use adapters::{
-    MetaMaskAdapter,
-    PhantomAdapter,
-    TaprootAdapter,
-};
+pub use adapters::{MetaMaskAdapter, PhantomAdapter, TaprootAdapter};
 
 #[cfg(target_arch = "wasm32")]
 pub type MetaMask = MetaMaskAdapter;
@@ -73,10 +64,7 @@ pub type Taproot = TaprootAdapter;
 // ==================== PROVIDERS (Nonce Strategies) ====================
 
 #[cfg(feature = "http")]
-pub use providers::{
-    SentryNonceProvider,
-    PortalNonceProvider,
-};
+pub use providers::{PortalNonceProvider, SentryNonceProvider};
 
 /// Short alias for [`SentryNonceProvider`].
 #[cfg(feature = "http")]
@@ -138,29 +126,26 @@ pub mod prelude {
 
     // Signers
     pub use super::{
-        NativeSigner, AgentSigner, EvmSigner, SolanaSigner, BitcoinSigner,
-        Native, Agent, Evm, Solana, Bitcoin,
+        Agent, AgentSigner, Bitcoin, BitcoinSigner, Evm, EvmSigner, Native, NativeSigner, Solana,
+        SolanaSigner,
     };
 
     // Adapters (WASM only)
     #[cfg(target_arch = "wasm32")]
-    pub use super::{
-        MetaMaskAdapter, PhantomAdapter, TaprootAdapter,
-        MetaMask, Phantom, Taproot,
-    };
+    pub use super::{MetaMask, MetaMaskAdapter, Phantom, PhantomAdapter, Taproot, TaprootAdapter};
 
     // Providers (http feature)
     #[cfg(feature = "http")]
-    pub use super::{SentryNonceProvider, PortalNonceProvider, Sentry, Portal};
+    pub use super::{Portal, PortalNonceProvider, Sentry, SentryNonceProvider};
 
     // Convenience builder functions
-    pub use super::{native, agent};
+    #[cfg(feature = "bitcoin")]
+    pub use super::bitcoin;
     #[cfg(feature = "evm")]
     pub use super::evm;
     #[cfg(feature = "solana")]
     pub use super::solana;
-    #[cfg(feature = "bitcoin")]
-    pub use super::bitcoin;
+    pub use super::{agent, native};
 
     // Cryptogram bridge
     #[cfg(feature = "cryptogram")]

@@ -3,6 +3,7 @@ members = [
     "crates/core",
     "crates/native",
     "crates/wasm",
+    "crates/wasm-lib",
 ]
 resolver = "2"
 

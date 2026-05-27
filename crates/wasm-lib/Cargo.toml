@@ -1,0 +1,30 @@
+[package]
+name = "morpheum-signing-wasm-lib"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Shared WASM wallet adapters (MetaMask, Phantom, Taproot) for reuse across morpheum-signing-wasm and morpheum-sdk-wasm"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+morpheum-signing-core = { path = "../core", default-features = false, features = ["std", "wasm"] }
+
+async-trait = { workspace = true }
+prost = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+uuid = { version = "1", features = ["js"] }

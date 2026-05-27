@@ -19,8 +19,8 @@ use morpheum_signing_core::{
 #[cfg(feature = "claim-verification")]
 mod verification {
     use super::*;
-    use morpheum_signing_native::NativeSigner;
     use morpheum_signing_core::signer::Signer;
+    use morpheum_signing_native::NativeSigner;
 
     #[test]
     fn test_verify_succeeds_with_matching_issuer() {
@@ -41,7 +41,10 @@ mod verification {
             .unwrap();
 
         let result = claim.verify(now, &issuer_pubkey);
-        assert!(result.is_ok(), "verify should succeed when issuer matches pubkey");
+        assert!(
+            result.is_ok(),
+            "verify should succeed when issuer matches pubkey"
+        );
     }
 
     #[test]
@@ -119,7 +122,10 @@ mod verification {
             .unwrap();
 
         let result = claim.verify(now, &evm_pubkey);
-        assert!(result.is_ok(), "verify should succeed with Secp256k1 key type");
+        assert!(
+            result.is_ok(),
+            "verify should succeed with Secp256k1 key type"
+        );
     }
 }
 
@@ -249,7 +255,11 @@ fn test_sub_range_size_saturating() {
     // Manually set invalid range to test saturating behavior
     claim.nonce_sub_range_start = 500;
     claim.nonce_sub_range_end = 100;
-    assert_eq!(claim.sub_range_size(), 0, "sub_range_size should saturate to 0");
+    assert_eq!(
+        claim.sub_range_size(),
+        0,
+        "sub_range_size should saturate to 0"
+    );
 }
 
 // ==================== BOUNDARY / EDGE CASE TESTS ====================
@@ -301,7 +311,10 @@ fn test_claim_expiry_exactly_at_boundary() {
         .signature(Signature::Ed25519([1u8; 64]))
         .build(now);
 
-    assert!(result.is_err(), "Expiry at exactly current time should fail");
+    assert!(
+        result.is_err(),
+        "Expiry at exactly current time should fail"
+    );
 
     // Expiry == now + 1 → valid
     let result = VcClaimBuilder::new()
@@ -313,7 +326,10 @@ fn test_claim_expiry_exactly_at_boundary() {
         .signature(Signature::Ed25519([1u8; 64]))
         .build(now);
 
-    assert!(result.is_ok(), "Expiry 1 second in the future should be valid");
+    assert!(
+        result.is_ok(),
+        "Expiry 1 second in the future should be valid"
+    );
 }
 
 #[test]

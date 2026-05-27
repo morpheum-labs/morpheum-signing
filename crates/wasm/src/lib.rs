@@ -98,6 +98,38 @@ export interface TradingKeyClaimBuilt extends TradingKeyClaimInput {
 }
 
 /**
+ * Constructs canonical SignDoc bytes without requiring a connected wallet.
+ *
+ * This is the signer-less counterpart to TxBuilderWasm — it builds the same
+ * protobuf structures but returns encoded bytes + SHA-256 hash instead of signing.
+ * Callable from both browser and Node.js (via wasm-pack --target nodejs).
+ *
+ * @param type_url    Protobuf type URL (e.g., "/bucket.v1.MsgCreateBucketRequest")
+ * @param msg_bytes   Pre-encoded protobuf message bytes
+ * @param signer_address  Hex-encoded signer key (20-byte EVM or 32-byte Ed25519)
+ * @param chain_type  ChainType enum value (1 = Ethereum, 2 = Solana, 3 = Bitcoin)
+ * @param sign_mode   SignMode enum value
+ * @param chain_id    Chain identifier (e.g., "morm-dev-1")
+ * @param memo        Optional transaction memo
+ * @param account_number  Optional account number (defaults to 0)
+ */
+export function buildSignDocBytes(
+    type_url: string,
+    msg_bytes: Uint8Array,
+    signer_address: string,
+    chain_type: number,
+    sign_mode: number,
+    chain_id: string,
+    memo?: string,
+    account_number?: number,
+): {
+    signDocBytes: Uint8Array;
+    signDocHash: string;
+    bodyBytes: Uint8Array;
+    authInfoBytes: Uint8Array;
+};
+
+/**
  * Main transaction builder for browser use.
  *
  * Completely generic — messages added via addMessage(type_url, value).

@@ -16,13 +16,13 @@ extern crate alloc;
 
 // ==================== PUBLIC MODULES ====================
 
-pub mod error;
-pub mod types;
 pub mod builder;
 pub mod claim;
+pub mod error;
 pub mod mapper;
 pub mod nonce;
 pub mod signer;
+pub mod types;
 pub mod wallet_adapter;
 
 /// Chain-side transaction verification (signature + claim + mapping).
@@ -69,6 +69,12 @@ pub use cryptogram_crypto;
 /// - `proto::identity::v1::AgentId`
 pub use morpheum_primitives::pb as proto;
 
+/// Phase 23A semantics-tier re-export so downstream crates (e.g.
+/// `morpheum-sdk-core`) can declare a transaction's
+/// [`morpheum_primitives::tx_class::TxClass`] via the builder without
+/// taking a direct primitives dependency.
+pub use morpheum_primitives::tx_class;
+
 /// Prost Any re-export (used heavily in TxBody.messages).
 pub use crate::proto::Any;
 
@@ -95,19 +101,19 @@ pub mod prelude {
 
     // Protobuf types users need most often
     pub use super::proto::tx::v1::{
-        AuthInfo, ModeInfo, Nonce, SignDoc, SignMode, SignerInfo, Tx, TxBody, TxRaw,
-        TransactionType,
+        AuthInfo, ModeInfo, Nonce, SignDoc, SignMode, SignerInfo, TransactionType, Tx, TxBody,
+        TxRaw,
     };
 
     pub use super::Any;
 
     // Traits
     pub use super::builder::TxBuilder;
+    pub use super::claim::{TradingKeyClaim, VcClaimBuilder};
     pub use super::mapper::{AddressMapper, DefaultAddressMapper};
     pub use super::nonce::NonceProvider;
     pub use super::signer::Signer;
     pub use super::wallet_adapter::WalletAdapter;
-    pub use super::claim::{TradingKeyClaim, VcClaimBuilder};
 
     // Chain-side verifier (feature-gated)
     #[cfg(feature = "full-crypto")]

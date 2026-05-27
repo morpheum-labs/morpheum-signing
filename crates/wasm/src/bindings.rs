@@ -17,9 +17,7 @@ use serde::Deserialize;
 use sha2::Digest;
 use wasm_bindgen::prelude::*;
 
-use crate::adapters::{
-    MetaMaskAdapterWasm, PhantomAdapterWasm, TaprootAdapterWasm, WasmSigner,
-};
+use crate::adapters::{MetaMaskAdapterWasm, PhantomAdapterWasm, TaprootAdapterWasm, WasmSigner};
 use crate::core::{
     builder::TxBuilder as CoreTxBuilder,
     claim::{TradingKeyClaim, VcClaimBuilder},
@@ -119,7 +117,7 @@ impl TxBuilderWasm {
     /// Pass the protobuf type URL and encoded bytes as a `Uint8Array`.
     #[wasm_bindgen(js_name = "addMessage")]
     pub fn add_message(mut self, type_url: String, value: Vec<u8>) -> TxBuilderWasm {
-        let any = prost_types::Any { type_url, value };
+        let any = crate::core::Any { type_url, value };
         self.inner = self.inner.add_message(any);
         self
     }
@@ -198,6 +196,125 @@ impl TxBuilderWasm {
 
         Ok(obj.into())
     }
+}
+
+// ==================== STATIC SIGN-DOC BUILDER (signer-less) ====================
+
+/// Constructs canonical SignDoc bytes without requiring a connected wallet.
+///
+/// This is the signer-less counterpart to `TxBuilder::sign()` — it builds the
+/// exact same `TxBody`, `AuthInfo`, and `SignDoc` protobuf structures but returns
+/// the raw encoded bytes + SHA-256 hash instead of signing them.
+///
+/// Callable from both browser and Node.js (via `wasm-pack --target nodejs`).
+///
+/// The optional `genesis_hash` argument (Phase M3 — audit `O20` / `C12`)
+/// binds the SignDoc preimage to a specific chain instance so a valid
+/// signature cannot be replayed across forks that share a `chain_id`.
+/// Pass `undefined` / `null` for pre-fork signers; pass the raw 32-byte
+/// genesis block hash at/after `FORK_VERSION_STRICT_GENESIS_BINDING`
+/// activates.
+///
+/// Returns a JS object:
+/// ```typescript
+/// {
+///   signDocBytes: Uint8Array;   // SignDoc proto-encoded bytes
+///   signDocHash: string;        // hex(SHA-256(signDocBytes))
+///   bodyBytes: Uint8Array;      // TxBody proto-encoded bytes
+///   authInfoBytes: Uint8Array;  // AuthInfo proto-encoded bytes
+/// }
+/// ```
+#[wasm_bindgen(js_name = "buildSignDocBytes")]
+pub fn build_sign_doc_bytes(
+    type_url: String,
+    msg_bytes: Vec<u8>,
+    signer_address: String,
+    chain_type: i32,
+    sign_mode: i32,
+    chain_id: String,
+    memo: Option<String>,
+    account_number: Option<u64>,
+    genesis_hash: Option<Vec<u8>>,
+) -> Result<JsValue, JsValue> {
+    use crate::core::proto::tx::v1::{self as tx, AuthInfo, ModeInfo, SignDoc, SignerInfo, TxBody};
+
+    let addr_hex = signer_address.strip_prefix("0x").unwrap_or(&signer_address);
+    let key_bytes = hex::decode(addr_hex)
+        .map_err(|e| JsValue::from_str(&format!("invalid signer_address hex: {e}")))?;
+
+    // Chain type 1 = Ethereum (secp256k1), otherwise Ed25519
+    let key_type_url = if chain_type == 1 {
+        "/cosmos.crypto.secp256k1.PubKey"
+    } else {
+        "/cosmos.crypto.ed25519.PubKey"
+    };
+
+    let body = TxBody {
+        messages: vec![crate::core::Any {
+            type_url,
+            value: msg_bytes,
+        }],
+        memo: memo.unwrap_or_default(),
+        timeout_timestamp: None,
+        priority_tip: String::new(),
+    };
+
+    let signer_info = SignerInfo {
+        public_key: Some(crate::core::Any {
+            type_url: key_type_url.into(),
+            value: key_bytes,
+        }),
+        mode_info: Some(ModeInfo {
+            sum: Some(tx::mode_info::Sum::Single(tx::mode_info::Single {
+                mode: sign_mode,
+            })),
+        }),
+        chain_type,
+        ..Default::default()
+    };
+
+    let auth_info = AuthInfo {
+        signer_infos: vec![signer_info],
+        gas_limit: 0,
+    };
+
+    let body_bytes = body.encode_to_vec();
+    let auth_info_bytes = auth_info.encode_to_vec();
+
+    let sign_doc = SignDoc {
+        body_bytes: body_bytes.clone(),
+        auth_info_bytes: auth_info_bytes.clone(),
+        chain_id,
+        account_number: account_number.unwrap_or(0),
+        genesis_hash: genesis_hash.unwrap_or_default(),
+    };
+    let sign_doc_bytes = sign_doc.encode_to_vec();
+
+    let hash_hex = hex::encode(sha2::Sha256::digest(&sign_doc_bytes));
+
+    let obj = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &obj,
+        &"signDocBytes".into(),
+        &js_sys::Uint8Array::from(sign_doc_bytes.as_slice()).into(),
+    )
+    .map_err(|_| JsValue::from_str("failed to set signDocBytes"))?;
+    js_sys::Reflect::set(&obj, &"signDocHash".into(), &JsValue::from_str(&hash_hex))
+        .map_err(|_| JsValue::from_str("failed to set signDocHash"))?;
+    js_sys::Reflect::set(
+        &obj,
+        &"bodyBytes".into(),
+        &js_sys::Uint8Array::from(body_bytes.as_slice()).into(),
+    )
+    .map_err(|_| JsValue::from_str("failed to set bodyBytes"))?;
+    js_sys::Reflect::set(
+        &obj,
+        &"authInfoBytes".into(),
+        &js_sys::Uint8Array::from(auth_info_bytes.as_slice()).into(),
+    )
+    .map_err(|_| JsValue::from_str("failed to set authInfoBytes"))?;
+
+    Ok(obj.into())
 }
 
 // ==================== JS-FRIENDLY CLAIM DESERIALIZATION ====================
@@ -355,7 +472,11 @@ impl VcClaimBuilderWasm {
             "ed25519" => Signature::Ed25519(arr),
             "secp256k1" => Signature::Secp256k1(arr),
             "schnorr" => Signature::Schnorr(arr),
-            _ => return Err(JsValue::from_str("signature_type must be 'ed25519', 'secp256k1', or 'schnorr'")),
+            _ => {
+                return Err(JsValue::from_str(
+                    "signature_type must be 'ed25519', 'secp256k1', or 'schnorr'",
+                ))
+            }
         };
         self.inner = self.inner.signature(sig);
         self.signature_type = Some(sig_type);
@@ -372,30 +493,74 @@ impl VcClaimBuilderWasm {
 
         // Return as a JS-friendly object
         let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &"issuer".into(), &js_sys::Uint8Array::from(&claim.issuer.0[..]).into())
-            .map_err(|_| JsValue::from_str("failed to set issuer"))?;
-        js_sys::Reflect::set(&obj, &"subject".into(), &js_sys::Uint8Array::from(&claim.subject.0[..]).into())
-            .map_err(|_| JsValue::from_str("failed to set subject"))?;
-        js_sys::Reflect::set(&obj, &"permissions".into(), &JsValue::from(claim.permissions as f64))
-            .map_err(|_| JsValue::from_str("failed to set permissions"))?;
-        js_sys::Reflect::set(&obj, &"max_daily_usd".into(), &JsValue::from(claim.max_daily_usd as f64))
-            .map_err(|_| JsValue::from_str("failed to set max_daily_usd"))?;
-        js_sys::Reflect::set(&obj, &"expiry_timestamp".into(), &JsValue::from(claim.expiry_timestamp as f64))
-            .map_err(|_| JsValue::from_str("failed to set expiry_timestamp"))?;
-        js_sys::Reflect::set(&obj, &"nonce_sub_range_start".into(), &JsValue::from(claim.nonce_sub_range_start))
-            .map_err(|_| JsValue::from_str("failed to set nonce_sub_range_start"))?;
-        js_sys::Reflect::set(&obj, &"nonce_sub_range_end".into(), &JsValue::from(claim.nonce_sub_range_end))
-            .map_err(|_| JsValue::from_str("failed to set nonce_sub_range_end"))?;
-        js_sys::Reflect::set(&obj, &"signature".into(), &js_sys::Uint8Array::from(&claim.signature.to_bytes()[..]).into())
-            .map_err(|_| JsValue::from_str("failed to set signature"))?;
-        js_sys::Reflect::set(&obj, &"signature_type".into(), &JsValue::from_str(self.signature_type.as_deref().unwrap_or("ed25519")))
-            .map_err(|_| JsValue::from_str("failed to set signature_type"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"issuer".into(),
+            &js_sys::Uint8Array::from(&claim.issuer.0[..]).into(),
+        )
+        .map_err(|_| JsValue::from_str("failed to set issuer"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"subject".into(),
+            &js_sys::Uint8Array::from(&claim.subject.0[..]).into(),
+        )
+        .map_err(|_| JsValue::from_str("failed to set subject"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"permissions".into(),
+            &JsValue::from(claim.permissions as f64),
+        )
+        .map_err(|_| JsValue::from_str("failed to set permissions"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"max_daily_usd".into(),
+            &JsValue::from(claim.max_daily_usd as f64),
+        )
+        .map_err(|_| JsValue::from_str("failed to set max_daily_usd"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"expiry_timestamp".into(),
+            &JsValue::from(claim.expiry_timestamp as f64),
+        )
+        .map_err(|_| JsValue::from_str("failed to set expiry_timestamp"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"nonce_sub_range_start".into(),
+            &JsValue::from(claim.nonce_sub_range_start),
+        )
+        .map_err(|_| JsValue::from_str("failed to set nonce_sub_range_start"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"nonce_sub_range_end".into(),
+            &JsValue::from(claim.nonce_sub_range_end),
+        )
+        .map_err(|_| JsValue::from_str("failed to set nonce_sub_range_end"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"signature".into(),
+            &js_sys::Uint8Array::from(&claim.signature.to_bytes()[..]).into(),
+        )
+        .map_err(|_| JsValue::from_str("failed to set signature"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"signature_type".into(),
+            &JsValue::from_str(self.signature_type.as_deref().unwrap_or("ed25519")),
+        )
+        .map_err(|_| JsValue::from_str("failed to set signature_type"))?;
         // Also include the proto-encoded Any for direct embedding
         let any = claim.to_proto_any();
-        js_sys::Reflect::set(&obj, &"proto_any_type_url".into(), &JsValue::from_str(&any.type_url))
-            .map_err(|_| JsValue::from_str("failed to set proto_any_type_url"))?;
-        js_sys::Reflect::set(&obj, &"proto_any_value".into(), &js_sys::Uint8Array::from(&any.value[..]).into())
-            .map_err(|_| JsValue::from_str("failed to set proto_any_value"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"proto_any_type_url".into(),
+            &JsValue::from_str(&any.type_url),
+        )
+        .map_err(|_| JsValue::from_str("failed to set proto_any_type_url"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &"proto_any_value".into(),
+            &js_sys::Uint8Array::from(&any.value[..]).into(),
+        )
+        .map_err(|_| JsValue::from_str("failed to set proto_any_value"))?;
 
         Ok(obj.into())
     }

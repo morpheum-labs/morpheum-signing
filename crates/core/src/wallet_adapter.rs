@@ -64,7 +64,10 @@ pub type BoxedWalletAdapter = Box<dyn WalletAdapter>;
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait WalletAdapterExt: WalletAdapter {
     /// Convenience: requests signature and returns `Signature` wrapper.
-    async fn request_signature_wrapped(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
+    async fn request_signature_wrapped(
+        &self,
+        sign_doc: &SignDoc,
+    ) -> Result<Signature, SigningError> {
         self.request_signature(sign_doc).await
     }
 }

@@ -16,7 +16,7 @@
 //! `SolanaSigner` in the `signers/` module.
 
 use async_trait::async_trait;
-use js_sys::{Uint8Array, Reflect};
+use js_sys::{Reflect, Uint8Array};
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -61,7 +61,9 @@ impl PhantomAdapter {
     /// Creates a new Phantom adapter.
     #[must_use]
     pub const fn new() -> Self {
-        Self { cached_address: None }
+        Self {
+            cached_address: None,
+        }
     }
 }
 
@@ -72,9 +74,9 @@ impl WalletAdapter for PhantomAdapter {
     /// The `SignDoc` is hashed (SHA-256) and prefixed with a clear message
     /// for security, determinism, and good UX in the wallet popup.
     async fn request_signature(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
-        let phantom = PHANTOM
-            .as_ref()
-            .ok_or_else(|| SigningError::wallet_adapter("Phantom not detected (window.phantom missing)"))?;
+        let phantom = PHANTOM.as_ref().ok_or_else(|| {
+            SigningError::wallet_adapter("Phantom not detected (window.phantom missing)")
+        })?;
 
         let solana = phantom
             .solana()
@@ -89,11 +91,14 @@ impl WalletAdapter for PhantomAdapter {
         // 3. Request signature
         let result = JsFuture::from(solana.sign_message(&message))
             .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Phantom signMessage failed: {:?}", e)))?;
+            .map_err(|e| {
+                SigningError::wallet_adapter(format!("Phantom signMessage failed: {:?}", e))
+            })?;
 
         // 4. Extract signature (Uint8Array)
-        let signature_value = Reflect::get(&result, &JsValue::from("signature"))
-            .map_err(|_| SigningError::wallet_adapter("Phantom response missing 'signature' field"))?;
+        let signature_value = Reflect::get(&result, &JsValue::from("signature")).map_err(|_| {
+            SigningError::wallet_adapter("Phantom response missing 'signature' field")
+        })?;
 
         let signature_array: Uint8Array = signature_value
             .dyn_into()
@@ -135,9 +140,9 @@ impl PhantomAdapter {
             return Ok(pk);
         }
 
-        let result = JsFuture::from(provider.connect())
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Phantom connect failed: {:?}", e)))?;
+        let result = JsFuture::from(provider.connect()).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("Phantom connect failed: {:?}", e))
+        })?;
 
         let public_key_value = Reflect::get(&result, &JsValue::from("publicKey"))
             .map_err(|_| SigningError::wallet_adapter("Phantom response missing 'publicKey'"))?;

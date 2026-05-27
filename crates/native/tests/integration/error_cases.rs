@@ -17,7 +17,10 @@ pub async fn test_builder_rejects_empty_messages() {
         .sign()
         .await;
 
-    assert!(result.is_err(), "Builder should fail when no messages are added");
+    assert!(
+        result.is_err(),
+        "Builder should fail when no messages are added"
+    );
     match result.unwrap_err() {
         SigningError::Signing(msg) if msg.contains("message") || msg.contains("empty") => {}
         e => panic!("Expected Signing error about missing messages, got: {e:?}"),
@@ -97,7 +100,10 @@ fn test_equal_nonce_sub_range_is_invalid() {
         .signature(Signature::Ed25519([1u8; 64]))
         .build(now);
 
-    assert!(result.is_err(), "Equal nonce sub-range should fail (empty range)");
+    assert!(
+        result.is_err(),
+        "Equal nonce sub-range should fail (empty range)"
+    );
 }
 
 #[test]
@@ -189,7 +195,10 @@ fn test_zero_signature_is_rejected() {
         .signature(Signature::Ed25519([0u8; 64])) // all-zero = "missing"
         .build(now);
 
-    assert!(result.is_err(), "All-zero signature should be treated as missing");
+    assert!(
+        result.is_err(),
+        "All-zero signature should be treated as missing"
+    );
     match result.unwrap_err() {
         SigningError::InvalidClaim(msg) if msg.contains("signature") => {}
         e => panic!("Expected error about missing signature, got: {e:?}"),

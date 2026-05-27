@@ -40,8 +40,7 @@ mod hex_bytes {
 
 /// Re-export all core protobuf types from primitives (proto-centric).
 pub use tx::{
-    AuthInfo, ModeInfo, Nonce, SignDoc, SignMode, SignerInfo, Tx, TxBody, TxRaw,
-    TransactionType,
+    AuthInfo, ModeInfo, Nonce, SignDoc, SignMode, SignerInfo, TransactionType, Tx, TxBody, TxRaw,
 };
 
 /// Re-export Any for message packing.
@@ -172,7 +171,10 @@ impl PublicKey {
 
         match any.type_url.as_str() {
             "/morpheum.crypto.ed25519.PubKey" | "/cosmos.crypto.ed25519.PubKey" => {
-                let bytes: [u8; 32] = any.value.as_slice().try_into()
+                let bytes: [u8; 32] = any
+                    .value
+                    .as_slice()
+                    .try_into()
                     .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
                 Ok(Self::Ed25519(bytes))
             }
@@ -190,7 +192,10 @@ impl PublicKey {
                 }
             }
             "/morpheum.crypto.schnorr.PubKey" => {
-                let bytes: [u8; 32] = any.value.as_slice().try_into()
+                let bytes: [u8; 32] = any
+                    .value
+                    .as_slice()
+                    .try_into()
                     .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
                 Ok(Self::Schnorr(bytes))
             }
@@ -314,7 +319,11 @@ impl SignedTx {
     /// Creates a new [`SignedTx`] from its constituent parts.
     #[must_use]
     pub const fn new(tx: Tx, raw_bytes: Vec<u8>, tx_raw: Option<TxRaw>) -> Self {
-        Self { tx, raw_bytes, tx_raw }
+        Self {
+            tx,
+            raw_bytes,
+            tx_raw,
+        }
     }
 
     /// Decodes a [`SignedTx`] from raw protobuf bytes.
@@ -334,10 +343,14 @@ impl SignedTx {
 
         let tx = Tx::decode(raw_bytes)?;
 
-        let body_bytes = tx.body.as_ref()
+        let body_bytes = tx
+            .body
+            .as_ref()
             .map(|b| b.encode_to_vec())
             .unwrap_or_default();
-        let auth_info_bytes = tx.auth_info.as_ref()
+        let auth_info_bytes = tx
+            .auth_info
+            .as_ref()
             .map(|a| a.encode_to_vec())
             .unwrap_or_default();
 

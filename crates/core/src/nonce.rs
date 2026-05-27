@@ -9,11 +9,7 @@
 
 use async_trait::async_trait;
 
-use crate::{
-    error::SigningError,
-    proto::tx::v1::Nonce,
-    types::AccountId,
-};
+use crate::{error::SigningError, proto::tx::v1::Nonce, types::AccountId};
 
 /// Strategy for obtaining the next nonce for an account.
 ///

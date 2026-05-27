@@ -17,7 +17,7 @@
 //! This adapter is **browser-only** and works seamlessly with the WASM target.
 
 use async_trait::async_trait;
-use js_sys::{JSON, Object, Reflect};
+use js_sys::{Object, Reflect, JSON};
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -53,7 +53,9 @@ impl MetaMaskAdapter {
     /// Creates a new MetaMask adapter.
     #[must_use]
     pub const fn new() -> Self {
-        Self { cached_address: None }
+        Self {
+            cached_address: None,
+        }
     }
 }
 
@@ -64,9 +66,9 @@ impl WalletAdapter for MetaMaskAdapter {
     /// The `SignDoc` is hashed and wrapped in a canonical EIP-712 payload.
     /// This is the recommended, secure, and widely supported method.
     async fn request_signature(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
-        let ethereum = ETHEREUM
-            .as_ref()
-            .ok_or_else(|| SigningError::wallet_adapter("MetaMask not detected (window.ethereum missing)"))?;
+        let ethereum = ETHEREUM.as_ref().ok_or_else(|| {
+            SigningError::wallet_adapter("MetaMask not detected (window.ethereum missing)")
+        })?;
 
         // 1. Ensure we have an account connected
         let address = self.ensure_connected(ethereum).await?;
@@ -81,18 +83,24 @@ impl WalletAdapter for MetaMaskAdapter {
         );
 
         let request_obj = Object::new();
-        Reflect::set(&request_obj, &JsValue::from("method"), &JsValue::from("eth_signTypedData_v4"))
-            .map_err(|_| SigningError::wallet_adapter("failed to set method"))?;
+        Reflect::set(
+            &request_obj,
+            &JsValue::from("method"),
+            &JsValue::from("eth_signTypedData_v4"),
+        )
+        .map_err(|_| SigningError::wallet_adapter("failed to set method"))?;
         Reflect::set(&request_obj, &JsValue::from("params"), &params)
             .map_err(|_| SigningError::wallet_adapter("failed to set params"))?;
 
         let result = JsFuture::from(ethereum.request(&request_obj))
             .await
-            .map_err(|e| SigningError::wallet_adapter(format!("MetaMask request failed: {:?}", e)))?;
+            .map_err(|e| {
+                SigningError::wallet_adapter(format!("MetaMask request failed: {:?}", e))
+            })?;
 
-        let sig_hex: String = result
-            .as_string()
-            .ok_or_else(|| SigningError::wallet_adapter("MetaMask returned non-string signature"))?;
+        let sig_hex: String = result.as_string().ok_or_else(|| {
+            SigningError::wallet_adapter("MetaMask returned non-string signature")
+        })?;
 
         // Remove "0x" prefix and decode
         let sig_hex = sig_hex.strip_prefix("0x").unwrap_or(&sig_hex);
@@ -138,14 +146,20 @@ impl MetaMaskAdapter {
 
         let params = js_sys::Array::of1(&JsValue::from("eth_requestAccounts"));
         let request_obj = Object::new();
-        Reflect::set(&request_obj, &JsValue::from("method"), &JsValue::from("eth_requestAccounts"))
-            .map_err(|_| SigningError::wallet_adapter("failed to build request"))?;
+        Reflect::set(
+            &request_obj,
+            &JsValue::from("method"),
+            &JsValue::from("eth_requestAccounts"),
+        )
+        .map_err(|_| SigningError::wallet_adapter("failed to build request"))?;
         Reflect::set(&request_obj, &JsValue::from("params"), &params)
             .map_err(|_| SigningError::wallet_adapter("failed to build request"))?;
 
         let result = JsFuture::from(ethereum.request(&request_obj))
             .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Failed to request accounts: {:?}", e)))?;
+            .map_err(|e| {
+                SigningError::wallet_adapter(format!("Failed to request accounts: {:?}", e))
+            })?;
 
         let accounts = js_sys::Array::from(&result);
         let first = accounts
@@ -156,8 +170,9 @@ impl MetaMaskAdapter {
         // Cache the address
         let mut bytes = [0u8; 20];
         let hex = first.strip_prefix("0x").unwrap_or(&first);
-        hex::decode_to_slice(hex, &mut bytes)
-            .map_err(|e| SigningError::wallet_adapter(format!("Invalid address from MetaMask: {}", e)))?;
+        hex::decode_to_slice(hex, &mut bytes).map_err(|e| {
+            SigningError::wallet_adapter(format!("Invalid address from MetaMask: {}", e))
+        })?;
 
         // Note: We don't mutate self here because this is &self.
         // In real usage the caller should re-use the same adapter instance.
@@ -180,8 +195,12 @@ impl MetaMaskAdapter {
             .map_err(|_| SigningError::wallet_adapter("failed to build domain"))?;
 
         let message = Object::new();
-        Reflect::set(&message, &JsValue::from("signDocHash"), &JsValue::from(hash_hex))
-            .map_err(|_| SigningError::wallet_adapter("failed to build message"))?;
+        Reflect::set(
+            &message,
+            &JsValue::from("signDocHash"),
+            &JsValue::from(hash_hex),
+        )
+        .map_err(|_| SigningError::wallet_adapter("failed to build message"))?;
 
         let types = Object::new();
         let eip712_domain = js_sys::Array::new();
@@ -201,8 +220,12 @@ impl MetaMaskAdapter {
             .map_err(|_| SigningError::wallet_adapter("failed to build payload"))?;
         Reflect::set(&payload, &JsValue::from("domain"), &domain)
             .map_err(|_| SigningError::wallet_adapter("failed to build payload"))?;
-        Reflect::set(&payload, &JsValue::from("primaryType"), &JsValue::from("SignDoc"))
-            .map_err(|_| SigningError::wallet_adapter("failed to build payload"))?;
+        Reflect::set(
+            &payload,
+            &JsValue::from("primaryType"),
+            &JsValue::from("SignDoc"),
+        )
+        .map_err(|_| SigningError::wallet_adapter("failed to build payload"))?;
         Reflect::set(&payload, &JsValue::from("message"), &message)
             .map_err(|_| SigningError::wallet_adapter("failed to build payload"))?;
 

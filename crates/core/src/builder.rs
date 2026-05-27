@@ -31,9 +31,16 @@ use crate::{
 pub struct TxBuilder<S: Signer> {
     signer: S,
     chain_id: String,
+    /// Optional genesis hash (raw bytes, typically a SHA-256 digest of the
+    /// target chain's genesis block) that will be bound into the `SignDoc`
+    /// preimage. Phase M3 (`O20` / audit row `C12`): defaults to an empty
+    /// byte string for backward compatibility with pre-fork signers; callers
+    /// targeting the strict-binding fork MUST set it explicitly via
+    /// [`TxBuilder::with_genesis_hash`].
+    genesis_hash: Vec<u8>,
     account_number: Option<u64>,
     memo: Option<String>,
-    timeout_timestamp: Option<u64>, // seconds since epoch
+    timeout_timestamp: Option<u64>,   // seconds since epoch
     messages: Vec<crate::proto::Any>, // ← ONLY generic Any
     signing_options: SigningOptions,
     nonce_provider: Option<BoxedNonceProvider>,
@@ -42,6 +49,13 @@ pub struct TxBuilder<S: Signer> {
     address_mapper: Box<dyn AddressMapper>,
     wallet_adapter: Option<BoxedWalletAdapter>,
     trading_key_claim: Option<TradingKeyClaim>,
+    priority_tip: u128,
+    /// Submitter-asserted semantics tier consumed by the
+    /// consensus tie-break (Phase 23A — semantics-aware ordering).
+    /// Defaults to [`morpheum_primitives::tx_class::TxClass::Standard`]
+    /// (wire `0`) so pre-23A call-sites that omit the field inherit
+    /// the legacy ordering by construction.
+    tx_class: morpheum_primitives::tx_class::TxClass,
     // Agent-specific context (optional, zero overhead for regular users).
     agent_did: Option<String>,
     verifiable_presentation: Option<Vec<u8>>,
@@ -68,6 +82,7 @@ impl<S: Signer> TxBuilder<S> {
         Self {
             signer,
             chain_id: "morpheum-test-1".to_string(),
+            genesis_hash: Vec::new(),
             account_number: None,
             memo: None,
             timeout_timestamp: None,
@@ -78,6 +93,8 @@ impl<S: Signer> TxBuilder<S> {
             address_mapper: Box::new(DefaultAddressMapper),
             wallet_adapter: None,
             trading_key_claim: None,
+            priority_tip: 0,
+            tx_class: morpheum_primitives::tx_class::TxClass::Standard,
             agent_did: None,
             verifiable_presentation: None,
             trading_key_address: None,
@@ -90,6 +107,19 @@ impl<S: Signer> TxBuilder<S> {
     #[must_use]
     pub fn chain_id(mut self, chain_id: impl Into<String>) -> Self {
         self.chain_id = chain_id.into();
+        self
+    }
+
+    /// Binds the transaction signing preimage to the target chain's genesis
+    /// hash (Phase M3 — audit `O20` / row `C12`).
+    ///
+    /// Leaving this unset produces a `SignDoc` with an empty `genesis_hash`
+    /// byte string, which remains valid pre-fork. At/after the strict-binding
+    /// fork activates, callers MUST set the correct genesis hash or the
+    /// resulting signature will be rejected by `verify_tx`.
+    #[must_use]
+    pub fn with_genesis_hash(mut self, hash: impl Into<Vec<u8>>) -> Self {
+        self.genesis_hash = hash.into();
         self
     }
 
@@ -113,7 +143,11 @@ impl<S: Signer> TxBuilder<S> {
     /// Convenience: Adds a typed protobuf message by packing it into `Any`.
     /// The caller provides the exact type URL (e.g. "type.googleapis.com/market.v1.MsgCreateMarketRequest").
     #[must_use]
-    pub fn add_typed_message<M: prost::Message>(mut self, type_url: impl Into<String>, msg: &M) -> Self {
+    pub fn add_typed_message<M: prost::Message>(
+        mut self,
+        type_url: impl Into<String>,
+        msg: &M,
+    ) -> Self {
         self.messages.push(crate::proto::Any {
             type_url: type_url.into(),
             value: msg.encode_to_vec(),
@@ -134,6 +168,36 @@ impl<S: Signer> TxBuilder<S> {
     #[must_use]
     pub const fn timeout_seconds(mut self, seconds: u64) -> Self {
         self.timeout_timestamp = Some(seconds);
+        self
+    }
+
+    /// Sets an optional priority tip in oneirs (1 MORM = 10^18 oneirs) for
+    /// faster inclusion during congestion. A value of 0 (default) means no
+    /// tip — the transaction relies solely on mana-score sponsorship.
+    /// Tips below 1 MORM are treated as dust and ignored by validators.
+    #[must_use]
+    pub const fn priority_tip(mut self, tip_oneirs: u128) -> Self {
+        self.priority_tip = tip_oneirs;
+        self
+    }
+
+    /// Declares the transaction's semantics tier for the Phase 23A
+    /// tier-aware intra-block tie-break. Leaving this unset defaults
+    /// to [`morpheum_primitives::tx_class::TxClass::Standard`] (wire
+    /// `0`), which matches pre-23A behavior.
+    ///
+    /// Submitter-asserted on the wire; the consensus crate orders by
+    /// tier but does NOT verify semantics — the runtime executor
+    /// rejects mis-declared transactions at execution (a `PostOnly`
+    /// that crosses, a `Cancel` against a non-existent order, etc.).
+    /// See [`morpheum_primitives::tx_class`] for the encoding
+    /// contract and SRP boundary.
+    #[must_use]
+    pub const fn with_tx_class(
+        mut self,
+        class: morpheum_primitives::tx_class::TxClass,
+    ) -> Self {
+        self.tx_class = class;
         self
     }
 
@@ -250,6 +314,12 @@ impl<S: Signer> TxBuilder<S> {
                 seconds: ts as i64,
                 nanos: 0,
             }),
+            priority_tip: if self.priority_tip == 0 {
+                String::new()
+            } else {
+                self.priority_tip.to_string()
+            },
+            tx_class: self.tx_class.to_wire(),
         };
 
         // 3. Build AuthInfo + SignerInfo
@@ -261,7 +331,9 @@ impl<S: Signer> TxBuilder<S> {
         // Auto-derive trading_key_address from TradingKeyClaim.subject when
         // the caller hasn't set it explicitly. The subject IS the trading key.
         let trading_key_address = self.trading_key_address.or_else(|| {
-            self.trading_key_claim.as_ref().map(|c| hex::encode(c.subject.0))
+            self.trading_key_claim
+                .as_ref()
+                .map(|c| hex::encode(c.subject.0))
         });
 
         #[cfg(feature = "dynamic-signer-info")]
@@ -327,18 +399,23 @@ impl<S: Signer> TxBuilder<S> {
 
         let auth_info = AuthInfo {
             signer_infos: vec![signer_info],
+            gas_limit: 0,
         };
 
         // 4. Encode body + auth_info once (reused in SignDoc and TxRaw)
         let body_bytes = body.encode_to_vec();
         let auth_info_bytes = auth_info.encode_to_vec();
 
-        // 5. Build SignDoc (the exact bytes that get signed)
+        // 5. Build SignDoc (the exact bytes that get signed). The
+        // `genesis_hash` field (Phase M3 — `O20` / `C12`) binds the signature
+        // to a specific chain instance so a valid signature cannot be
+        // replayed on a forked chain that happens to share a `chain_id`.
         let sign_doc = SignDoc {
             body_bytes: body_bytes.clone(),
             auth_info_bytes: auth_info_bytes.clone(),
             chain_id: self.chain_id,
             account_number: self.account_number.unwrap_or(0),
+            genesis_hash: self.genesis_hash,
         };
 
         // 6. Perform signing
@@ -362,5 +439,233 @@ impl<S: Signer> TxBuilder<S> {
         };
 
         Ok(SignedTx::new(tx, raw_bytes, Some(tx_raw)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Phase 22X.4.5 Pin A — bench wire-side determinism.
+    //!
+    //! Asserts that `TxBuilder::priority_tip(N).sign().await` produces a
+    //! signed `Tx` whose `body.priority_tip` round-trips byte-identically
+    //! through prost encode → decode AND agrees with
+    //! `morpheum_primitives::priority_fee::parse_tip_oneirs` for every
+    //! boundary value in `{0, 1, MIN_TIP_ONEIRS, u128::MAX}`. A regression
+    //! that flips the `if self.priority_tip == 0 { "" } else {
+    //! tip.to_string() }` branch at line 317-321 (or that the prost wire
+    //! drops the field) silently zeros downstream emission gates and
+    //! breaks every `consensus.economics.*` MEV gauge — see
+    //! [`mormcore/docs/consensus/bench/phase22x4-5-stage-0-scope.md`](../../../mormcore/docs/consensus/bench/phase22x4-5-stage-0-scope.md)
+    //! §3 for the H2 hypothesis taxonomy.
+
+    use super::*;
+    use crate::proto::tx::v1::Tx as ProtoTx;
+    use crate::types::{PublicKey, Signature, WalletType};
+    use async_trait::async_trait;
+    use morpheum_primitives::priority_fee::{parse_tip_oneirs, MIN_TIP_ONEIRS};
+
+    /// Hermetic test signer — emits a deterministic stub Ed25519 signature
+    /// without invoking any crypto backend. The Pin A contract targets the
+    /// wire body field only; the signature path is irrelevant to the
+    /// `body.priority_tip` round-trip assertion. Defined locally so the
+    /// `core` crate's `#[cfg(test)]` module stays self-contained (no
+    /// dev-dep on `morpheum-signing-native`, which would create a
+    /// workspace-cycle in the no_std core layer).
+    struct StubSigner;
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Signer for StubSigner {
+        async fn sign(&self, _sign_doc: &SignDoc) -> Result<Signature, SigningError> {
+            Ok(Signature::Ed25519([0u8; 64]))
+        }
+
+        fn public_key(&self) -> PublicKey {
+            PublicKey::Ed25519([0u8; 32])
+        }
+
+        fn wallet_type(&self) -> WalletType {
+            WalletType::Native
+        }
+    }
+
+    fn stub_message() -> crate::proto::Any {
+        crate::proto::Any {
+            type_url: "type.googleapis.com/morpheum.test.v1.MsgPin".to_string(),
+            value: vec![0xAA, 0xBB, 0xCC],
+        }
+    }
+
+    /// Pin A — proto round-trip determinism for the four-value boundary
+    /// table `tip_oneirs ∈ {0, 1, MIN_TIP_ONEIRS, u128::MAX}`.
+    ///
+    /// Steps per row:
+    /// 1. Build + sign with the stub signer at the given tip.
+    /// 2. Assert `signed.tx().body.priority_tip` matches the wire-omission
+    ///    convention at `builder.rs:317-321` (`""` for `0`, `N.to_string()`
+    ///    otherwise).
+    /// 3. Round-trip via prost: `signed.tx().encode_to_vec()` →
+    ///    `ProtoTx::decode` → assert the decoded `body.priority_tip` is
+    ///    byte-identical to the pre-encode value.
+    /// 4. Assert `parse_tip_oneirs(&decoded.body.priority_tip).unwrap_or(0)`
+    ///    equals `N` (the chain-side admission helper agrees with the
+    ///    bench-side encoder for every boundary value).
+    #[tokio::test]
+    async fn phase22x4_5_pin_a_priority_tip_round_trips_through_prost_for_boundary_table() {
+        const TABLE: [u128; 4] = [0u128, 1u128, MIN_TIP_ONEIRS, u128::MAX];
+
+        for &tip_oneirs in &TABLE {
+            let signed = TxBuilder::new(StubSigner)
+                .chain_id("morpheum-test-1")
+                .add_message(stub_message())
+                .priority_tip(tip_oneirs)
+                .sign()
+                .await
+                .expect("StubSigner build+sign should succeed");
+
+            let body = signed
+                .tx()
+                .body
+                .as_ref()
+                .expect("signed Tx must carry a body");
+
+            let expected_wire = if tip_oneirs == 0 {
+                String::new()
+            } else {
+                tip_oneirs.to_string()
+            };
+            assert_eq!(
+                body.priority_tip, expected_wire,
+                "in-memory Tx body priority_tip must match the wire-omission convention for tip_oneirs={tip_oneirs}",
+            );
+
+            let encoded = signed.tx().encode_to_vec();
+            let decoded = ProtoTx::decode(encoded.as_slice())
+                .expect("Tx must decode after prost round-trip");
+            let decoded_body = decoded
+                .body
+                .as_ref()
+                .expect("decoded Tx must carry a body");
+
+            assert_eq!(
+                decoded_body.priority_tip, expected_wire,
+                "decoded body.priority_tip must be byte-identical to the encoded value for tip_oneirs={tip_oneirs}",
+            );
+
+            let parsed = parse_tip_oneirs(&decoded_body.priority_tip)
+                .expect("parse_tip_oneirs must succeed on every encoder output");
+            assert_eq!(
+                parsed, tip_oneirs,
+                "parse_tip_oneirs must agree with the encoder for tip_oneirs={tip_oneirs}",
+            );
+        }
+    }
+
+    /// Canonical proto3 wire-byte triple for `TxBody.priority_tip = "1"`
+    /// — `[tag=0x22, len=0x01, ascii_one=0x31]`. SSOT-mirrored from
+    /// [`mormcore::consensus::metrics_self_diagnostic::PRIORITY_TIP_ONE_TAG_4_WIRE`]
+    /// (the chain-side admission scanner reuses the same triple).
+    /// Inlined here because `morpheum-signing-core` is upstream of
+    /// `morpheum-consensus` in the workspace dependency graph; a
+    /// proto-level edit that breaks the derivation flips the build-
+    /// time invariant in
+    /// [`morpheum-proto/tests/priority_tip_wire_tag_invariant.rs`](../../../../morpheum-proto/tests/priority_tip_wire_tag_invariant.rs)
+    /// before this constant can ever drift silently.
+    const PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE: [u8; 3] = [0x22, 0x01, 0x31];
+
+    /// Pin L — full bench-side encoder pin asserting that
+    /// `TxBuilder::priority_tip(1).sign()` produces a `Tx` whose
+    /// **fully-encoded prost wire bytes** (the exact bytes that go
+    /// out over the gRPC `submit_tx` channel) contain the canonical
+    /// triple `[0x22, 0x01, 0x31]` exactly once.
+    ///
+    /// **Why this strictly subsumes Pin A.** Pin A asserts the
+    /// round-trip on `signed.tx().body.priority_tip` (string field).
+    /// Pin L closes the next layer: even if `body.priority_tip` is
+    /// `"1"` in memory, a regression that mis-tags the field on the
+    /// wire (e.g. a stale `morpheum-proto` $OUT_DIR cache linked
+    /// against the signing crate, a custom `Encode` impl that drops
+    /// the field, a hypothetical `#[prost(skip)]` annotation) would
+    /// pass Pin A but fail Pin L. Pin L is the bench-side mirror of
+    /// the chain-side admission scanner's invariant — the two
+    /// bridge the bench → wire → chain pipeline at byte-identity.
+    ///
+    /// **§2.13 forensic context.** The Phase 22X.4.7 §2.13 Pin J
+    /// drive observed
+    /// `consensus.ingress.admission_payload_priority_tip_one_marker_present_count`
+    /// Σ=0 across every validator pod despite the bench configuring
+    /// `MORM_BENCH_MEV_EXTRACTION_TIP_INTERLEAVE_N=1` +
+    /// `_TIP_ONEIRS=1`. Pin L is the unit-local pre-flight pin
+    /// that catches the regression class **before** the operator
+    /// pays the cluster bring-up cost.
+    #[tokio::test]
+    async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_one_emits_canonical_wire_triple() {
+        let signed = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .add_message(stub_message())
+            .priority_tip(1)
+            .sign()
+            .await
+            .expect("StubSigner build+sign should succeed for tip_oneirs=1");
+
+        let encoded = signed.tx().encode_to_vec();
+        let occurrences = encoded
+            .windows(PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE.len())
+            .filter(|w| *w == PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE)
+            .count();
+
+        assert_eq!(
+            occurrences, 1,
+            "Pin L: TxBuilder::priority_tip(1).sign().tx().encode_to_vec() MUST contain the \
+             canonical wire triple [0x22, 0x01, 0x31] exactly once (proto3 tag-4 LEN-delimited \
+             string \"1\"). Got {occurrences} occurrences in encoded bytes {encoded:?}. \
+             Remediation tree: \
+             (1) `morpheum-proto/tests/priority_tip_wire_tag_invariant.rs::txbody_priority_tip_one_encodes_canonical_tag_4_wire_triple` \
+             also red → proto edit reassigned field-number 4; revert or re-tag. \
+             (2) Proto pin GREEN but Pin L red → bench-side `TxBuilder::sign()` is dropping or \
+             reshaping `body.priority_tip` between the in-memory body and the encoded `Tx` \
+             (audit `builder.rs:317-321` for an off-by-one branch flip on the \
+             `if self.priority_tip == 0` guard).",
+        );
+    }
+
+    /// Pin L (negative-symmetry) — `TxBuilder::priority_tip(0).sign()`
+    /// MUST produce a wire stream that does **NOT** contain the
+    /// canonical tipped triple. Locks the wire-omission convention
+    /// (proto3 default-value elision) on the full bench encoder so
+    /// the marker scan stays bit-identity with admission semantics:
+    /// "untipped tx" ⇔ "no `[0x22, 0x01, 0x31]` on the wire".
+    ///
+    /// Without this negative pin, a hypothetical regression that
+    /// always emits `priority_tip = "1"` (regardless of caller
+    /// intent) would silently flip every untipped admission into
+    /// the tipped wire-byte sentinel's positive distribution and
+    /// alias the §5.2O matrix's tipped-vs-untipped strata.
+    #[tokio::test]
+    async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_zero_omits_canonical_wire_triple() {
+        let signed = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .add_message(stub_message())
+            .priority_tip(0)
+            .sign()
+            .await
+            .expect("StubSigner build+sign should succeed for tip_oneirs=0");
+
+        let encoded = signed.tx().encode_to_vec();
+        let occurrences = encoded
+            .windows(PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE.len())
+            .filter(|w| *w == PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE)
+            .count();
+
+        assert_eq!(
+            occurrences, 0,
+            "Pin L (negative): TxBuilder::priority_tip(0).sign().tx().encode_to_vec() MUST NOT \
+             contain the canonical wire triple [0x22, 0x01, 0x31] anywhere (proto3 elides \
+             default-value strings). Got {occurrences} occurrences in encoded bytes {encoded:?}. \
+             A non-zero count here means the encoder is shipping `priority_tip = \"1\"` for \
+             tip_oneirs=0, which would alias every untipped admission into the wire-byte \
+             sentinel's tipped distribution and structurally break the §5.2O Pin J matrix's \
+             tipped-vs-untipped strata.",
+        );
     }
 }

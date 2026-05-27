@@ -83,9 +83,9 @@ impl MetaMaskAdapterWasm {
         .map_err(|_| SigningError::wallet_adapter("failed to build request object"))?;
 
         let promise = ethereum.request(&request_obj.into());
-        let result = JsFuture::from(promise)
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("eth_requestAccounts failed: {e:?}")))?;
+        let result = JsFuture::from(promise).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("eth_requestAccounts failed: {e:?}"))
+        })?;
 
         // Parse first account
         let accounts = js_sys::Array::from(&result);
@@ -96,8 +96,9 @@ impl MetaMaskAdapterWasm {
 
         let hex_str = first.strip_prefix("0x").unwrap_or(&first);
         let mut address_bytes = [0u8; 20];
-        hex::decode_to_slice(hex_str, &mut address_bytes)
-            .map_err(|e| SigningError::wallet_adapter(format!("invalid EVM address from MetaMask: {e}")))?;
+        hex::decode_to_slice(hex_str, &mut address_bytes).map_err(|e| {
+            SigningError::wallet_adapter(format!("invalid EVM address from MetaMask: {e}"))
+        })?;
 
         Ok(Self {
             cached_address: RefCell::new(address_bytes),
@@ -125,13 +126,13 @@ impl MetaMaskAdapterWasm {
             .map_err(|_| SigningError::wallet_adapter("failed to set params"))?;
 
         let promise = ethereum.request(&request_obj.into());
-        let result = JsFuture::from(promise)
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("eth_signTypedData_v4 failed: {e:?}")))?;
+        let result = JsFuture::from(promise).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("eth_signTypedData_v4 failed: {e:?}"))
+        })?;
 
-        let sig_hex: String = result
-            .as_string()
-            .ok_or_else(|| SigningError::wallet_adapter("MetaMask returned non-string signature"))?;
+        let sig_hex: String = result.as_string().ok_or_else(|| {
+            SigningError::wallet_adapter("MetaMask returned non-string signature")
+        })?;
 
         // Parse the 65-byte recoverable signature (r || s || v) → take r || s (64 bytes)
         let sig_hex = sig_hex.strip_prefix("0x").unwrap_or(&sig_hex);
@@ -166,8 +167,8 @@ impl MetaMaskAdapterWasm {
     }
 
     /// Returns the protobuf-encoded public key for `SignerInfo`.
-    pub(crate) fn public_key_proto(&self) -> prost_types::Any {
-        prost_types::Any {
+    pub(crate) fn public_key_proto(&self) -> morpheum_signing_core::Any {
+        morpheum_signing_core::Any {
             type_url: "/morpheum.crypto.secp256k1.PubKey".to_string(),
             value: self.cached_address.borrow().to_vec(),
         }
@@ -225,7 +226,11 @@ impl MetaMaskAdapterWasm {
         let payload = Object::new();
         set_prop(&payload, "types", &types)?;
         set_prop(&payload, "domain", &domain)?;
-        set_prop(&payload, "primaryType", &JsValue::from_str("MorpheumSignDoc"))?;
+        set_prop(
+            &payload,
+            "primaryType",
+            &JsValue::from_str("MorpheumSignDoc"),
+        )?;
         set_prop(&payload, "message", &message)?;
 
         js_sys::JSON::stringify(&payload)

@@ -35,7 +35,10 @@ impl NativeSigner {
     pub fn from_seed(seed: &[u8; 32]) -> Self {
         let signing_key = SigningKey::from_bytes(seed);
         let verifying_key = signing_key.verifying_key();
-        Self { signing_key, verifying_key }
+        Self {
+            signing_key,
+            verifying_key,
+        }
     }
 
     /// Creates a new `NativeSigner` from a BIP-39 mnemonic phrase.

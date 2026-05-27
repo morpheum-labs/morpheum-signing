@@ -167,7 +167,10 @@ async fn test_signed_tx_has_tx_raw() {
         .await
         .unwrap();
 
-    assert!(signed_tx.tx_raw().is_some(), "SignedTx should contain TxRaw");
+    assert!(
+        signed_tx.tx_raw().is_some(),
+        "SignedTx should contain TxRaw"
+    );
     let tx_raw = signed_tx.tx_raw().unwrap();
     assert!(!tx_raw.body_bytes.is_empty());
     assert!(!tx_raw.auth_info_bytes.is_empty());
@@ -187,7 +190,10 @@ async fn test_txhash_hex_is_valid() {
 
     let txhash = signed_tx.txhash_hex();
     assert_eq!(txhash.len(), 64, "SHA-256 hex should be 64 chars");
-    assert!(txhash.chars().all(|c| c.is_ascii_hexdigit()), "txhash should be valid hex");
+    assert!(
+        txhash.chars().all(|c| c.is_ascii_hexdigit()),
+        "txhash should be valid hex"
+    );
 }
 
 // ==================== BIP-39 MNEMONIC TESTS ====================
@@ -201,8 +207,8 @@ mod bip39_tests {
         // Standard 12-word BIP-39 test mnemonic
         let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
-        let signer = NativeSigner::from_mnemonic(mnemonic, "")
-            .expect("Valid mnemonic should succeed");
+        let signer =
+            NativeSigner::from_mnemonic(mnemonic, "").expect("Valid mnemonic should succeed");
 
         let signed_tx = native(signer)
             .chain_id("morpheum-test-1")
@@ -225,7 +231,11 @@ mod bip39_tests {
         let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let s1 = NativeSigner::from_mnemonic(mnemonic, "").unwrap();
         let s2 = NativeSigner::from_mnemonic(mnemonic, "").unwrap();
-        assert_eq!(s1.public_key(), s2.public_key(), "Same mnemonic should produce same key");
+        assert_eq!(
+            s1.public_key(),
+            s2.public_key(),
+            "Same mnemonic should produce same key"
+        );
     }
 
     #[test]

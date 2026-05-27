@@ -63,8 +63,7 @@ impl SentryNonceProvider {
     /// Panics if the HTTP client cannot be constructed (should not happen
     /// under normal system conditions).
     pub fn local() -> Self {
-        Self::new("http://127.0.0.1:8080")
-            .expect("failed to build local Sentry provider")
+        Self::new("http://127.0.0.1:8080").expect("failed to build local Sentry provider")
     }
 }
 
@@ -85,16 +84,9 @@ impl NonceProvider for SentryNonceProvider {
             self.base_url
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                SigningError::Nonce(NonceError::FetchFailed(format!(
-                    "GET {url} failed: {e}"
-                )))
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            SigningError::Nonce(NonceError::FetchFailed(format!("GET {url} failed: {e}")))
+        })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -104,21 +96,17 @@ impl NonceProvider for SentryNonceProvider {
             ))));
         }
 
-        let query_resp: QueryNonceStateResponse =
-            response.json().await.map_err(|e| {
-                SigningError::Nonce(NonceError::FetchFailed(format!(
-                    "GET {url} returned invalid JSON: {e}"
-                )))
-            })?;
+        let query_resp: QueryNonceStateResponse = response.json().await.map_err(|e| {
+            SigningError::Nonce(NonceError::FetchFailed(format!(
+                "GET {url} returned invalid JSON: {e}"
+            )))
+        })?;
 
-        let next_monotonic = query_resp
-            .last_monotonic
-            .checked_add(1)
-            .ok_or_else(|| {
-                SigningError::Nonce(NonceError::FetchFailed(
-                    "monotonic nonce overflow".to_string(),
-                ))
-            })?;
+        let next_monotonic = query_resp.last_monotonic.checked_add(1).ok_or_else(|| {
+            SigningError::Nonce(NonceError::FetchFailed(
+                "monotonic nonce overflow".to_string(),
+            ))
+        })?;
 
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

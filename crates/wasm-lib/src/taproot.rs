@@ -81,9 +81,9 @@ impl TaprootAdapterWasm {
 
         // Request account access
         let promise = unisat.request_accounts();
-        let result = JsFuture::from(promise)
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Unisat requestAccounts failed: {e:?}")))?;
+        let result = JsFuture::from(promise).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("Unisat requestAccounts failed: {e:?}"))
+        })?;
 
         let accounts = js_sys::Array::from(&result);
         let address = accounts
@@ -93,16 +93,17 @@ impl TaprootAdapterWasm {
 
         // Fetch the x-only public key (hex string, 64 chars = 32 bytes)
         let pk_promise = unisat.get_public_key();
-        let pk_result = JsFuture::from(pk_promise)
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Unisat getPublicKey failed: {e:?}")))?;
+        let pk_result = JsFuture::from(pk_promise).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("Unisat getPublicKey failed: {e:?}"))
+        })?;
 
-        let pk_hex: String = pk_result
-            .as_string()
-            .ok_or_else(|| SigningError::wallet_adapter("Unisat getPublicKey returned non-string"))?;
+        let pk_hex: String = pk_result.as_string().ok_or_else(|| {
+            SigningError::wallet_adapter("Unisat getPublicKey returned non-string")
+        })?;
 
-        let pk_bytes = hex::decode(&pk_hex)
-            .map_err(|e| SigningError::wallet_adapter(format!("invalid public key hex from Unisat: {e}")))?;
+        let pk_bytes = hex::decode(&pk_hex).map_err(|e| {
+            SigningError::wallet_adapter(format!("invalid public key hex from Unisat: {e}"))
+        })?;
 
         // Accept both 32-byte (x-only) and 33-byte (compressed) formats
         let mut pubkey = [0u8; 32];
@@ -131,13 +132,17 @@ impl TaprootAdapterWasm {
 
         // BIP-322-simple signing options
         let options = Object::new();
-        Reflect::set(&options, &JsValue::from_str("type"), &JsValue::from_str("bip322-simple"))
-            .map_err(|_| SigningError::wallet_adapter("failed to set signing options"))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("type"),
+            &JsValue::from_str("bip322-simple"),
+        )
+        .map_err(|_| SigningError::wallet_adapter("failed to set signing options"))?;
 
         let promise = unisat.sign_message(&message, &options);
-        let result = JsFuture::from(promise)
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Unisat signMessage failed: {e:?}")))?;
+        let result = JsFuture::from(promise).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("Unisat signMessage failed: {e:?}"))
+        })?;
 
         // Unisat may return the signature directly or nested in an object
         let sig_str = if let Some(s) = result.as_string() {
@@ -177,8 +182,8 @@ impl TaprootAdapterWasm {
     }
 
     /// Returns the protobuf-encoded public key for `SignerInfo`.
-    pub(crate) fn public_key_proto(&self) -> prost_types::Any {
-        prost_types::Any {
+    pub(crate) fn public_key_proto(&self) -> morpheum_signing_core::Any {
+        morpheum_signing_core::Any {
             type_url: "/morpheum.crypto.schnorr.PubKey".to_string(),
             value: self.cached_pubkey.borrow().to_vec(),
         }

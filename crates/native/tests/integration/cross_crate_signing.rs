@@ -139,7 +139,7 @@ async fn test_order_payload_to_native_signing_roundtrip() {
     );
 
     // 6. Cryptographic roundtrip verification
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("verify_signed_tx failed");
     assert_eq!(verified.account_ids.len(), 1);
     assert_eq!(verified.wallet_type, WalletType::Native);
@@ -191,7 +191,7 @@ async fn test_msgfactory_eip712_to_signing() {
     assert!(!signed_tx.tx.signatures[0].is_empty());
 
     // 5. Cryptographic verification
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("roundtrip verification failed");
     assert_eq!(verified.account_ids.len(), 1);
 }
@@ -200,10 +200,7 @@ async fn test_msgfactory_eip712_to_signing() {
 #[tokio::test]
 async fn test_bank_transfer_payload_roundtrip() {
     let payload = bank_transfer_payload("morpheum1sender", "morpheum1receiver", "500000");
-    let msg = payload_to_any(
-        "type.googleapis.com/bank.v1.MsgTransferRequest",
-        &payload,
-    );
+    let msg = payload_to_any("type.googleapis.com/bank.v1.MsgTransferRequest", &payload);
 
     let signer = NativeSigner::from_seed(&TEST_SEED);
     let signed_tx = native(signer)
@@ -223,7 +220,7 @@ async fn test_bank_transfer_payload_roundtrip() {
     );
 
     // Cryptographic verification
-    let verified = verify_signed_tx(&signed_tx, "morpheum-mainnet-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-mainnet-1", 0, &[], now_secs())
         .expect("verification failed");
     assert_eq!(verified.wallet_type, WalletType::Native);
 }
@@ -250,7 +247,7 @@ async fn test_native_sign_verify_roundtrip() {
         .await
         .expect("native signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("native verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -308,7 +305,7 @@ async fn test_agent_claim_roundtrip() {
     );
 
     // Full cryptographic verification + claim extraction
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("agent verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -331,10 +328,7 @@ async fn test_agent_claim_roundtrip() {
 async fn test_evm_sign_verify_roundtrip() {
     let signer = EvmSigner::from_seed(&TEST_SEED);
     let payload = bank_transfer_payload("0xABCDabcd", "0xDEADdead", "1000");
-    let msg = payload_to_any(
-        "type.googleapis.com/bank.v1.MsgTransferRequest",
-        &payload,
-    );
+    let msg = payload_to_any("type.googleapis.com/bank.v1.MsgTransferRequest", &payload);
 
     let signed_tx = evm(signer)
         .chain_id("morpheum-test-1")
@@ -344,7 +338,7 @@ async fn test_evm_sign_verify_roundtrip() {
         .await
         .expect("EVM signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("EVM verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -371,7 +365,7 @@ async fn test_solana_sign_verify_roundtrip() {
         .await
         .expect("Solana signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("Solana verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -403,8 +397,8 @@ async fn test_eip712_digest_sign_verify_via_standards() {
 
     // 3. Create EIP-712 typed data via registry
     let domain = domain_testnet();
-    let typed_data = create_typed_data_from_payload(&registry, &payload, domain)
-        .expect("typed data creation");
+    let typed_data =
+        create_typed_data_from_payload(&registry, &payload, domain).expect("typed data creation");
 
     // 4. Compute digest (B256 = FixedBytes<32>)
     let digest: [u8; 32] = typed_data.digest().0;
@@ -472,7 +466,7 @@ async fn test_multiple_standards_messages_in_single_tx() {
     );
 
     // Verify roundtrip
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, now_secs())
+    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
         .expect("multi-message verification failed");
     assert_eq!(verified.body.messages.len(), 2);
     assert_eq!(verified.account_ids.len(), 1);
@@ -500,7 +494,10 @@ async fn test_explicit_cryptogram_crypto_reexport() {
     let pubkey = cryptogram_crypto::ed25519_public_key(&TEST_SEED);
     let valid = cryptogram_crypto::ed25519_verify(&digest, &signature, &pubkey)
         .expect("ed25519_verify via explicit re-export");
-    assert!(valid, "signature must verify via explicit cryptogram-crypto re-export");
+    assert!(
+        valid,
+        "signature must verify via explicit cryptogram-crypto re-export"
+    );
 
     // Also verify via the universal dispatcher to exercise the full API surface
     let sig_for_universal = Eip712Signature {

@@ -9,8 +9,8 @@
 
 use alloc::vec::Vec;
 
-use prost::Message;
 use crate::proto::Any;
+use prost::Message;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -138,7 +138,8 @@ impl TradingKeyClaim {
     /// Returns the size of the nonce sub-range for parallelism.
     #[must_use]
     pub const fn sub_range_size(&self) -> u32 {
-        self.nonce_sub_range_end.saturating_sub(self.nonce_sub_range_start)
+        self.nonce_sub_range_end
+            .saturating_sub(self.nonce_sub_range_start)
     }
 
     /// Computes the SHA-256 digest of the unsigned claim fields.
@@ -217,26 +218,32 @@ impl TradingKeyClaim {
             return Ok(None);
         }
 
-        let any = Any::decode(opts.wasm_seed.as_slice())
-            .map_err(|e| SigningError::invalid_claim(
-                alloc::format!("failed to decode claim Any envelope: {e}")
-            ))?;
+        let any = Any::decode(opts.wasm_seed.as_slice()).map_err(|e| {
+            SigningError::invalid_claim(alloc::format!("failed to decode claim Any envelope: {e}"))
+        })?;
 
         if any.type_url != TRADING_KEY_CLAIM_TYPE_URL {
             return Ok(None);
         }
 
-        let proto = TradingKeyClaimProto::decode(any.value.as_slice())
-            .map_err(|e| SigningError::invalid_claim(
-                alloc::format!("failed to decode TradingKeyClaim proto: {e}")
-            ))?;
+        let proto = TradingKeyClaimProto::decode(any.value.as_slice()).map_err(|e| {
+            SigningError::invalid_claim(alloc::format!(
+                "failed to decode TradingKeyClaim proto: {e}"
+            ))
+        })?;
 
-        let issuer_bytes: [u8; 32] = proto.issuer.try_into()
+        let issuer_bytes: [u8; 32] = proto
+            .issuer
+            .try_into()
             .map_err(|_| SigningError::invalid_claim("issuer must be 32 bytes"))?;
-        let subject_bytes: [u8; 32] = proto.subject.try_into()
+        let subject_bytes: [u8; 32] = proto
+            .subject
+            .try_into()
             .map_err(|_| SigningError::invalid_claim("subject must be 32 bytes"))?;
 
-        let sig_bytes: [u8; 64] = proto.signature.try_into()
+        let sig_bytes: [u8; 64] = proto
+            .signature
+            .try_into()
             .map_err(|_| SigningError::invalid_claim("signature must be 64 bytes"))?;
 
         Ok(Some(TradingKeyClaim {

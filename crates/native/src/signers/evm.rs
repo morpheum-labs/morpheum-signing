@@ -6,9 +6,8 @@
 
 use async_trait::async_trait;
 use k256::ecdsa::{
-    signature::hazmat::PrehashSigner,
-    SigningKey as SecpSigningKey, VerifyingKey as SecpVerifyingKey,
-    Signature as SecpSignature,
+    signature::hazmat::PrehashSigner, Signature as SecpSignature, SigningKey as SecpSigningKey,
+    VerifyingKey as SecpVerifyingKey,
 };
 use prost::Message;
 use zeroize::ZeroizeOnDrop;
@@ -30,13 +29,7 @@ pub struct EvmSigner {
 }
 
 /// Standard Ethereum BIP-44 derivation path: `m/44'/60'/0'/0/0`.
-pub const EVM_DEFAULT_PATH: [u32; 5] = [
-    44 | 0x8000_0000,
-    60 | 0x8000_0000,
-    0x8000_0000,
-    0,
-    0,
-];
+pub const EVM_DEFAULT_PATH: [u32; 5] = [44 | 0x8000_0000, 60 | 0x8000_0000, 0x8000_0000, 0, 0];
 
 impl EvmSigner {
     /// Creates a new `EvmSigner` from a 32-byte seed.
@@ -80,13 +73,7 @@ impl EvmSigner {
             .map_err(|e| SigningError::invalid_key(format!("invalid BIP-39 mnemonic: {e}")))?;
 
         let bip39_seed = parsed.to_seed(passphrase);
-        let path = [
-            44 | 0x8000_0000,
-            60 | 0x8000_0000,
-            0x8000_0000,
-            0,
-            index,
-        ];
+        let path = [44 | 0x8000_0000, 60 | 0x8000_0000, 0x8000_0000, 0, index];
 
         let mut key_bytes = bip32_derive(&bip39_seed, &path)
             .map_err(|e| SigningError::invalid_key(format!("BIP-32 derivation failed: {e}")))?;
@@ -116,10 +103,12 @@ impl Signer for EvmSigner {
     /// branched on in variable time.
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
-        let signature: SecpSignature = self.signing_key.sign_prehash(&bytes)
-            .map_err(|e: k256::ecdsa::Error| {
-                SigningError::Crypto(CryptoError::Secp256k1(e.to_string()))
-            })?;
+        let signature: SecpSignature =
+            self.signing_key
+                .sign_prehash(&bytes)
+                .map_err(|e: k256::ecdsa::Error| {
+                    SigningError::Crypto(CryptoError::Secp256k1(e.to_string()))
+                })?;
 
         // Return 64-byte (r, s) signature (standard compact form).
         // Recovery ID can be added later if needed for full EVM recoverable signatures.
@@ -129,7 +118,9 @@ impl Signer for EvmSigner {
     /// Returns the secp256k1 compressed public key (33 bytes).
     fn public_key(&self) -> PublicKey {
         let compressed = self.verifying_key.to_encoded_point(true);
-        let bytes: [u8; 33] = compressed.as_bytes().try_into()
+        let bytes: [u8; 33] = compressed
+            .as_bytes()
+            .try_into()
             .expect("secp256k1 compressed public key must be 33 bytes");
         PublicKey::Secp256k1(bytes)
     }
@@ -185,13 +176,13 @@ fn bip32_derive(seed: &[u8], path: &[u32]) -> Result<[u8; 32], &'static str> {
         let il = &result[..32];
 
         // child_key = parse256(IL) + parent_key (mod n)
-        let parent: k256::Scalar = Option::from(k256::Scalar::from_repr(key.into()))
-            .ok_or("invalid parent key scalar")?;
+        let parent: k256::Scalar =
+            Option::from(k256::Scalar::from_repr(key.into())).ok_or("invalid parent key scalar")?;
 
         let mut il_arr = [0u8; 32];
         il_arr.copy_from_slice(il);
-        let tweak: k256::Scalar = Option::from(k256::Scalar::from_repr(il_arr.into()))
-            .ok_or("invalid tweak scalar")?;
+        let tweak: k256::Scalar =
+            Option::from(k256::Scalar::from_repr(il_arr.into())).ok_or("invalid tweak scalar")?;
 
         let child = parent + tweak;
         if bool::from(child.is_zero()) {

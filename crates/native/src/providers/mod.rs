@@ -26,11 +26,11 @@
 //! ```
 
 // Module declarations
-pub mod sentry;
 pub mod portal;
+pub mod sentry;
 
 // Public re-exports (feature-gated; short aliases are in lib.rs)
 #[cfg(feature = "http")]
-pub use sentry::SentryNonceProvider;
-#[cfg(feature = "http")]
 pub use portal::PortalNonceProvider;
+#[cfg(feature = "http")]
+pub use sentry::SentryNonceProvider;

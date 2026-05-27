@@ -20,7 +20,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // In production: derive this from a BIP-39 mnemonic or hardware wallet.
     let seed = [42u8; 32];
     let signer_from_seed = NativeSigner::from_seed(&seed);
-    println!("  Signer (from seed) account: {:?}", signer_from_seed.account_id());
+    println!(
+        "  Signer (from seed) account: {:?}",
+        signer_from_seed.account_id()
+    );
 
     // ── Option B: Create signer from a BIP-39 mnemonic ──────────────────
     // Requires the `bip39` feature (enabled by default in `full`).
@@ -29,7 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mnemonic = "abandon abandon abandon abandon abandon abandon \
                         abandon abandon abandon abandon abandon about";
         let signer = NativeSigner::from_mnemonic(mnemonic, "")?;
-        println!("  Signer (from mnemonic) account: {:?}", signer.account_id());
+        println!(
+            "  Signer (from mnemonic) account: {:?}",
+            signer.account_id()
+        );
         signer
     };
 
@@ -57,8 +63,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Output results ───────────────────────────────────────────────────
     println!("Transaction signed successfully!");
     println!("  TxHash          : {}", signed_tx.txhash_hex());
-    println!("  Nonce monotonic : {}", signed_tx.tx.nonce.as_ref().map_or(0, |n| n.monotonic));
-    println!("  Memo            : {}", signed_tx.tx.body.as_ref().map_or("", |b| &b.memo));
+    println!(
+        "  Nonce monotonic : {}",
+        signed_tx.tx.nonce.as_ref().map_or(0, |n| n.monotonic)
+    );
+    println!(
+        "  Memo            : {}",
+        signed_tx.tx.body.as_ref().map_or("", |b| &b.memo)
+    );
     println!("  Raw bytes len   : {} bytes", signed_tx.raw_bytes().len());
 
     Ok(())

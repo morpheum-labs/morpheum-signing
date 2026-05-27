@@ -21,9 +21,8 @@ fn test_native_address_mapping() {
 fn test_evm_address_mapping() {
     let mapper = DefaultAddressMapper;
     let addr = Address::Evm([
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-        0x12, 0x34, 0x56, 0x78,
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde,
+        0xf0, 0x12, 0x34, 0x56, 0x78,
     ]);
     let id = mapper.to_account_id(&addr).expect("EVM mapping failed");
     assert_eq!(id, addr.to_account_id());
@@ -49,7 +48,9 @@ fn test_bitcoin_taproot_address_mapping() {
 fn test_agent_did_address_mapping() {
     let mapper = DefaultAddressMapper;
     let addr = Address::Agent("did:agent:alpha-trader-v3".to_string());
-    let id = mapper.to_account_id(&addr).expect("Agent DID mapping failed");
+    let id = mapper
+        .to_account_id(&addr)
+        .expect("Agent DID mapping failed");
     assert_eq!(id, addr.to_account_id());
 }
 
@@ -60,9 +61,15 @@ fn test_empty_native_address_produces_valid_account_id() {
     let mapper = DefaultAddressMapper;
     let addr = Address::Native("".to_string());
     let result = mapper.to_account_id(&addr);
-    assert!(result.is_ok(), "Empty native address should still produce a valid AccountId");
+    assert!(
+        result.is_ok(),
+        "Empty native address should still produce a valid AccountId"
+    );
     // Verify it's the hash of empty bytes, not zero
-    assert_ne!(result.unwrap(), morpheum_signing_core::types::AccountId::ZERO);
+    assert_ne!(
+        result.unwrap(),
+        morpheum_signing_core::types::AccountId::ZERO
+    );
 }
 
 #[test]

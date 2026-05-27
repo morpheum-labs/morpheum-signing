@@ -128,9 +128,9 @@ impl PhantomAdapterWasm {
         let message = Self::build_sign_message(sign_doc);
 
         let promise = provider.sign_message(&message);
-        let result = JsFuture::from(promise)
-            .await
-            .map_err(|e| SigningError::wallet_adapter(format!("Phantom signMessage failed: {e:?}")))?;
+        let result = JsFuture::from(promise).await.map_err(|e| {
+            SigningError::wallet_adapter(format!("Phantom signMessage failed: {e:?}"))
+        })?;
 
         // Extract signature Uint8Array
         let sig_val = Reflect::get(&result, &JsValue::from_str("signature"))
@@ -158,8 +158,8 @@ impl PhantomAdapterWasm {
     }
 
     /// Returns the protobuf-encoded public key for `SignerInfo`.
-    pub(crate) fn public_key_proto(&self) -> prost_types::Any {
-        prost_types::Any {
+    pub(crate) fn public_key_proto(&self) -> morpheum_signing_core::Any {
+        morpheum_signing_core::Any {
             type_url: "/morpheum.crypto.ed25519.PubKey".to_string(),
             value: self.cached_pubkey.borrow().to_vec(),
         }

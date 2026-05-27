@@ -7,10 +7,7 @@
 //! - AccountId derivation consistency
 //! - ZeroizeOnDrop marker verification
 
-use morpheum_signing_core::{
-    prelude::*,
-    signer::Signer,
-};
+use morpheum_signing_core::{prelude::*, signer::Signer};
 use morpheum_signing_native::prelude::*;
 
 // ==================== KEY TYPE ISOLATION ====================
@@ -99,7 +96,11 @@ fn test_single_bit_difference_in_seed() {
     let s1 = NativeSigner::from_seed(&seed1);
     let s2 = NativeSigner::from_seed(&seed2);
 
-    assert_ne!(s1.public_key(), s2.public_key(), "Single bit change should produce different keys");
+    assert_ne!(
+        s1.public_key(),
+        s2.public_key(),
+        "Single bit change should produce different keys"
+    );
 
     // Flip a different bit position
     let mut seed3 = [0u8; 32];
@@ -109,7 +110,11 @@ fn test_single_bit_difference_in_seed() {
 
     let s3 = NativeSigner::from_seed(&seed3);
     let s4 = NativeSigner::from_seed(&seed4);
-    assert_ne!(s3.public_key(), s4.public_key(), "Different bit positions should produce different keys");
+    assert_ne!(
+        s3.public_key(),
+        s4.public_key(),
+        "Different bit positions should produce different keys"
+    );
 }
 
 // ==================== PUBLIC KEY PROTO ENCODING ====================
@@ -178,7 +183,10 @@ fn test_wallet_type_default_sign_modes() {
     assert_eq!(WalletType::Solana.default_sign_mode(), SignMode::Ed25519);
     assert_eq!(WalletType::Agent.default_sign_mode(), SignMode::Ed25519);
     assert_eq!(WalletType::Evm.default_sign_mode(), SignMode::Secp256k1);
-    assert_eq!(WalletType::Bitcoin.default_sign_mode(), SignMode::SchnorrAggregate);
+    assert_eq!(
+        WalletType::Bitcoin.default_sign_mode(),
+        SignMode::SchnorrAggregate
+    );
     assert_eq!(WalletType::Hardware.default_sign_mode(), SignMode::Ed25519);
 }
 
@@ -203,6 +211,7 @@ fn test_signed_tx_accessors() {
             messages: vec![],
             memo: "test".to_string(),
             timeout_timestamp: None,
+            priority_tip: String::new(),
         }),
         auth_info: None,
         signatures: vec![vec![1, 2, 3]],

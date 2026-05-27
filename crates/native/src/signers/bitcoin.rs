@@ -19,8 +19,7 @@
 
 use async_trait::async_trait;
 use bitcoin::secp256k1::{
-    schnorr::Signature as SchnorrSignature,
-    Keypair, Message as Secp256k1Message, Secp256k1,
+    schnorr::Signature as SchnorrSignature, Keypair, Message as Secp256k1Message, Secp256k1,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};

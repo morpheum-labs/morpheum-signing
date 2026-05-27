@@ -60,8 +60,7 @@ impl PortalNonceProvider {
     /// Panics if the HTTP client cannot be constructed (should not happen
     /// under normal system conditions).
     pub fn local() -> Self {
-        Self::new("http://127.0.0.1:9090")
-            .expect("failed to build local AgentPortal provider")
+        Self::new("http://127.0.0.1:9090").expect("failed to build local AgentPortal provider")
     }
 }
 
@@ -101,9 +100,7 @@ impl NonceProvider for PortalNonceProvider {
             .send()
             .await
             .map_err(|e| {
-                SigningError::Nonce(NonceError::FetchFailed(format!(
-                    "POST {url} failed: {e}"
-                )))
+                SigningError::Nonce(NonceError::FetchFailed(format!("POST {url} failed: {e}")))
             })?;
 
         let status = response.status();
