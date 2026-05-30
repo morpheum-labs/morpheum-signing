@@ -56,6 +56,15 @@ pub struct TxBuilder<S: Signer> {
     /// (wire `0`) so pre-23A call-sites that omit the field inherit
     /// the legacy ordering by construction.
     tx_class: morpheum_primitives::tx_class::TxClass,
+    /// Submitter-asserted urgency hint (Phase 22X.5.D Stage 2.E.1 —
+    /// L17 `WorkloadUrgentFlagAssignmentPolicyMode` implementation).
+    /// Stamped onto `TxBody.urgent` (proto field 6); consumed
+    /// chain-side by `priority_flood::classify_validated` to route
+    /// between the MAV path (`false`, default) and the direct flood
+    /// path (`true`). Defaults to `false` so pre-22X.5.D call-sites
+    /// that omit the field land on the legacy MAV-routed semantics
+    /// by construction.
+    urgent: bool,
     // Agent-specific context (optional, zero overhead for regular users).
     agent_did: Option<String>,
     verifiable_presentation: Option<Vec<u8>>,
@@ -95,6 +104,7 @@ impl<S: Signer> TxBuilder<S> {
             trading_key_claim: None,
             priority_tip: 0,
             tx_class: morpheum_primitives::tx_class::TxClass::Standard,
+            urgent: false,
             agent_did: None,
             verifiable_presentation: None,
             trading_key_address: None,
@@ -198,6 +208,35 @@ impl<S: Signer> TxBuilder<S> {
         class: morpheum_primitives::tx_class::TxClass,
     ) -> Self {
         self.tx_class = class;
+        self
+    }
+
+    /// Declares the transaction's `urgent` routing hint
+    /// (Phase 22X.5.D Stage 2.E.1 — L17
+    /// `WorkloadUrgentFlagAssignmentPolicyMode` implementation).
+    ///
+    /// Stamped onto `TxBody.urgent` (proto field 6); signed via
+    /// `SignDoc.body_bytes` so a relayer or gossip peer cannot
+    /// forge it. Consumed chain-side by
+    /// `priority_flood::classify_validated` to route between the
+    /// MAV path (`false`, default — the `MarkerRoutedToMavPathOnlyByDesign`
+    /// Hypothesis-B confirmed path closed in §2.15.R) and the
+    /// direct flood path (`true` — the §5.2I 4-axis matrix
+    /// `TipsConvergeToFloodPath` slot enabled by §2.15.S).
+    ///
+    /// Leaving this unset defaults to `false`, which is
+    /// byte-equivalent on the wire to pre-22X.5.D peers (proto3
+    /// default-elides `bool` `false` → zero-byte cost on the
+    /// legacy untipped path; tipped-but-MAV-routed Hypothesis-B
+    /// shape preserved unchanged).
+    ///
+    /// The setter is `const fn` for zero-cost monomorphisation on
+    /// the workload hot path; `#[must_use]` prevents the
+    /// builder-misuse class where a caller forgets to bind the
+    /// returned `Self`.
+    #[must_use]
+    pub const fn urgent(mut self, urgent: bool) -> Self {
+        self.urgent = urgent;
         self
     }
 
@@ -320,6 +359,7 @@ impl<S: Signer> TxBuilder<S> {
                 self.priority_tip.to_string()
             },
             tx_class: self.tx_class.to_wire(),
+            urgent: self.urgent,
         };
 
         // 3. Build AuthInfo + SignerInfo
@@ -666,6 +706,96 @@ mod tests {
              tip_oneirs=0, which would alias every untipped admission into the wire-byte \
              sentinel's tipped distribution and structurally break the §5.2O Pin J matrix's \
              tipped-vs-untipped strata.",
+        );
+    }
+
+    /// **Phase 22X.5.D Stage 2.E.1 integration test (C8.i.2) —
+    /// L17 `TxBuilder::urgent` round-trip.**
+    ///
+    /// `TxBuilder::urgent(true).sign()` MUST produce a signed
+    /// `Tx` whose `body.urgent == true` after prost
+    /// encode → decode (catches a regression where the field is
+    /// stripped on the wire) AND whose encoded byte stream
+    /// contains the proto3 `bool` true-byte tag-6 wire pair
+    /// `[0x30, 0x01]` (catches a regression where the encoder
+    /// silently emits a different field number).
+    ///
+    /// Without this pin, a bench-driven §2.15.S drive could
+    /// configure `TipConditional{1}` correctly + the
+    /// `TxBuilder::urgent` setter could be a no-op (e.g. a
+    /// future refactor that drops the `urgent: self.urgent`
+    /// wire-up from the `TxBody { .. }` literal at line ~324)
+    /// and the bench would still ship `body.urgent = false`
+    /// for every tx, silently reproducing the §2.15.R shape.
+    #[tokio::test]
+    async fn phase22x5_d_stage_2_e_1_tx_builder_urgent_round_trips_on_wire() {
+        let signed_urgent = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .add_message(stub_message())
+            .urgent(true)
+            .sign()
+            .await
+            .expect("StubSigner build+sign should succeed for urgent=true");
+        let body_urgent = signed_urgent
+            .tx()
+            .body
+            .as_ref()
+            .expect("signed urgent Tx must carry a body");
+        assert!(
+            body_urgent.urgent,
+            "C8.i.2 (in-memory): TxBuilder::urgent(true).sign().tx().body.urgent \
+             MUST be true. A false here means the builder is dropping the \
+             `urgent: self.urgent` field assignment at the TxBody construction \
+             site (audit builder.rs around line ~324)."
+        );
+        let encoded_urgent = signed_urgent.tx().encode_to_vec();
+        let decoded_urgent = ProtoTx::decode(encoded_urgent.as_slice())
+            .expect("encoded urgent Tx must decode after prost round-trip");
+        assert!(
+            decoded_urgent
+                .body
+                .as_ref()
+                .expect("decoded urgent Tx must carry a body")
+                .urgent,
+            "C8.i.2 (wire round-trip): decoded body.urgent MUST be true \
+             after prost encode → decode. A false here means the encoder \
+             is silently stripping or default-eliding the field even when \
+             set to true — would silently disable the §2.15.S \
+             `TipsConvergeToFloodPath` slot at the wire boundary."
+        );
+
+        // Negative-symmetry: urgent=false MUST elide on the wire
+        // (proto3 default-elision) and round-trip cleanly via the
+        // proto3 default-value path.
+        let signed_non_urgent = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .add_message(stub_message())
+            .urgent(false)
+            .sign()
+            .await
+            .expect("StubSigner build+sign should succeed for urgent=false");
+        let body_non_urgent = signed_non_urgent
+            .tx()
+            .body
+            .as_ref()
+            .expect("signed non-urgent Tx must carry a body");
+        assert!(
+            !body_non_urgent.urgent,
+            "C8.i.2 (in-memory negative): TxBuilder::urgent(false).sign() \
+             body.urgent MUST be false."
+        );
+        let encoded_non_urgent = signed_non_urgent.tx().encode_to_vec();
+        let decoded_non_urgent = ProtoTx::decode(encoded_non_urgent.as_slice())
+            .expect("encoded non-urgent Tx must decode after prost round-trip");
+        assert!(
+            !decoded_non_urgent
+                .body
+                .as_ref()
+                .expect("decoded non-urgent Tx must carry a body")
+                .urgent,
+            "C8.i.2 (wire round-trip negative): decoded body.urgent MUST be \
+             false (proto3 default-elision preserves backwards-compat with \
+             pre-22X.5.D peers)."
         );
     }
 }
