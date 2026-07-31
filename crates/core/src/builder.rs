@@ -203,10 +203,7 @@ impl<S: Signer> TxBuilder<S> {
     /// See [`morpheum_primitives::tx_class`] for the encoding
     /// contract and SRP boundary.
     #[must_use]
-    pub const fn with_tx_class(
-        mut self,
-        class: morpheum_primitives::tx_class::TxClass,
-    ) -> Self {
+    pub const fn with_tx_class(mut self, class: morpheum_primitives::tx_class::TxClass) -> Self {
         self.tx_class = class;
         self
     }
@@ -580,12 +577,9 @@ mod tests {
             );
 
             let encoded = signed.tx().encode_to_vec();
-            let decoded = ProtoTx::decode(encoded.as_slice())
-                .expect("Tx must decode after prost round-trip");
-            let decoded_body = decoded
-                .body
-                .as_ref()
-                .expect("decoded Tx must carry a body");
+            let decoded =
+                ProtoTx::decode(encoded.as_slice()).expect("Tx must decode after prost round-trip");
+            let decoded_body = decoded.body.as_ref().expect("decoded Tx must carry a body");
 
             assert_eq!(
                 decoded_body.priority_tip, expected_wire,
