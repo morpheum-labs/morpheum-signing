@@ -205,6 +205,7 @@ fn test_signing_options_default() {
 #[test]
 fn test_signed_tx_accessors() {
     use morpheum_signing_core::proto::tx::v1::{Tx, TxBody, TxRaw};
+    use morpheum_signing_core::tx_class::TxClass;
 
     let tx = Tx {
         body: Some(TxBody {
@@ -212,6 +213,14 @@ fn test_signed_tx_accessors() {
             memo: "test".to_string(),
             timeout_timestamp: None,
             priority_tip: String::new(),
+            // The accessors under test do not read either field, so
+            // both take the value a pre-23A / pre-22X.5.D peer implies
+            // by omitting them: `Standard` ordering, non-urgent
+            // routing. Named rather than a bare `0` so a re-numbering
+            // of the class encoding does not silently re-target this
+            // fixture.
+            tx_class: TxClass::Standard.to_wire(),
+            urgent: false,
         }),
         auth_info: None,
         signatures: vec![vec![1, 2, 3]],
