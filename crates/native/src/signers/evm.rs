@@ -150,6 +150,9 @@ impl ZeroizeOnDrop for EvmSigner {}
 /// Derives a 32-byte child private key from a BIP-39 seed using BIP-32 HD
 /// derivation. Supports both hardened (index >= 0x8000_0000) and normal child
 /// key derivation.
+// Reached only from the `from_mnemonic*` constructors, which are
+// themselves `bip39`-gated; without that feature there is no caller.
+#[cfg(feature = "bip39")]
 fn bip32_derive(seed: &[u8], path: &[u32]) -> Result<[u8; 32], &'static str> {
     use hmac::{Hmac, Mac};
     use k256::elliptic_curve::PrimeField;

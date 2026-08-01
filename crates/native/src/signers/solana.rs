@@ -162,6 +162,9 @@ impl ZeroizeOnDrop for SolanaSigner {}
 /// Derives a 32-byte child private key from a BIP-39 seed using SLIP-0010
 /// for Ed25519. Only hardened derivation is supported (all path indices
 /// must have the 0x8000_0000 bit set).
+// Reached only from the `from_mnemonic*` constructors, which are
+// themselves `bip39`-gated; without that feature there is no caller.
+#[cfg(feature = "bip39")]
 fn slip0010_derive(seed: &[u8], path: &[u32]) -> Result<[u8; 32], &'static str> {
     use hmac::{Hmac, Mac};
     use sha2::Sha512;
