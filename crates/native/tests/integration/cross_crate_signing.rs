@@ -385,9 +385,10 @@ impl Signer for KeccakModeSigner {
         } else {
             self.signing_key.sign(&bytes)
         };
-        Ok(Signature::Secp256k1(
-            sig.to_bytes().as_slice().try_into().expect("64-byte sig"),
-        ))
+        // `GenericArray -> [u8; 64]` via `Into`, matching the production
+        // EvmSigner conversion — infallible, and avoids the deprecated
+        // `GenericArray::as_slice`.
+        Ok(Signature::Secp256k1(sig.to_bytes().into()))
     }
 
     fn public_key(&self) -> PublicKey {
