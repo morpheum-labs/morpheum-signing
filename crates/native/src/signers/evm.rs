@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use k256::ecdsa::{
-    signature::hazmat::PrehashSigner, Signature as SecpSignature, SigningKey as SecpSigningKey,
+    signature::Signer as _, Signature as SecpSignature, SigningKey as SecpSigningKey,
     VerifyingKey as SecpVerifyingKey,
 };
 use prost::Message;
@@ -103,9 +103,20 @@ impl Signer for EvmSigner {
     /// branched on in variable time.
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
+        // `try_sign` hashes the message with SHA-256 before signing, which is
+        // what the verifier's `VerifyingKey::verify` does on the way back in
+        // (`morpheum_primitives::crypto::verify_secp256k1_bytes`). The pairs
+        // are `sign`/`verify` and `sign_prehash`/`verify_prehash`; mixing them
+        // silently produces signatures that never verify.
+        //
+        // This previously called `PrehashSigner::sign_prehash` on the encoded
+        // `SignDoc`, handing arbitrary-length message bytes to an API whose
+        // contract is a 32-byte digest. Every EVM signature this signer
+        // produced failed verification — caught the first time the cross-crate
+        // roundtrip test was able to compile and run.
         let signature: SecpSignature =
             self.signing_key
-                .sign_prehash(&bytes)
+                .try_sign(&bytes)
                 .map_err(|e: k256::ecdsa::Error| {
                     SigningError::Crypto(CryptoError::Secp256k1(e.to_string()))
                 })?;

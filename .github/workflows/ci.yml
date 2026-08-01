@@ -1,0 +1,88 @@
+# Continuous integration for morpheum-signing.
+#
+# This repository had no CI, and the cost of that was not hypothetical:
+# it was found broken — see the fixes that accompanied this workflow.
+# The gates below are the ones that would have caught it.
+#
+# ## Why the sibling checkouts
+#
+# morpheum-signing reaches its dependencies through `../` path entries, so cargo
+# needs them on disk as siblings. Every job therefore checks this repo
+# out under its own name and its dependencies alongside, reproducing the
+# local layout. This applies to `cargo fmt` too: `--all` resolves the
+# package graph, so it fails just like the rest without them.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref makes the older run's result irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: fmt + clippy + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: morpheum-signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: morpheum-signing
+      - name: Verify access to private siblings
+        # Fail here, naming the repository, rather than midway through a
+        # checkout whose 404 does not say whether the repo is missing or
+        # the token simply cannot see it.
+        env:
+          CI_REPO_READ_TOKEN: ${{ secrets.CI_REPO_READ_TOKEN }}
+        run: |
+          if [ -z "$CI_REPO_READ_TOKEN" ]; then
+            echo "::error::CI_REPO_READ_TOKEN is unset. morpheum-signing depends on private repositories (morpheum-primitives cryptogram) through ../ paths and cannot build without them. Note that secrets are not provided to workflows triggered from forks, so this is expected on fork pull requests."
+            exit 1
+          fi
+          failed=""
+          for repo in morpheum-primitives cryptogram; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+                     -H "Authorization: Bearer $CI_REPO_READ_TOKEN" \
+                     "https://api.github.com/repos/morpheum-labs/$repo")
+            echo "  $repo: HTTP $code"
+            [ "$code" = "200" ] || failed="$failed $repo"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::CI_REPO_READ_TOKEN cannot read:$failed. Grant it read-only Contents access to each, and authorise SSO if the organisation requires it."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: morpheum-labs/morpheum-primitives
+          path: morpheum-primitives
+          token: ${{ secrets.CI_REPO_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: morpheum-labs/cryptogram
+          path: cryptogram
+          token: ${{ secrets.CI_REPO_READ_TOKEN }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: morpheum-signing -> target
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        # -D warnings is the point of the gate: this repository accumulated
+        # warnings precisely because nothing failed on them.
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --all-features
