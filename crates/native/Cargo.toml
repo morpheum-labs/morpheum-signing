@@ -78,3 +78,6 @@ full = ["http", "full-crypto", "bip39", "claim-verification", "dynamic-signer-in
 
 [dev-dependencies]
 morpheum-crypto = { workspace = true }
+# Keccak-256 for the SignMode::Keccak256 routing test (same version as
+# morpheum-primitives, whose verify path is the SSOT under test).
+sha3 = "0.10"

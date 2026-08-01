@@ -249,7 +249,8 @@ pub fn verify_signed_tx(
 /// |-------------------|--------------------------------------------|---------------------|
 /// | Ed25519 / Agent   | Ed25519, GaslessEd25519                    | ed25519-dalek       |
 /// | Ed25519 / Agent   | SolanaOffchain                             | ed25519 hex-encoded |
-/// | Secp256k1         | Secp256k1, EcdsaLegacy, Keccak256          | k256 ECDSA          |
+/// | Secp256k1         | Secp256k1, EcdsaLegacy                     | k256 ECDSA (SHA-256)|
+/// | Secp256k1         | Keccak256                                  | k256 ECDSA (Keccak) |
 /// | Secp256k1         | Eip191Personal                             | k256 + sha3         |
 /// | EvmAddress        | Eip191Personal                             | k256 ecrecover      |
 /// | Schnorr           | SchnorrAggregate                           | (unsupported)       |
@@ -266,11 +267,20 @@ fn verify_signature(
             SignMode::Ed25519 | SignMode::GaslessEd25519,
         ) => verify_ed25519(key_bytes, sign_doc_bytes, sig_bytes),
 
-        // ── Secp256k1 raw ECDSA (standard, pre-hashed) ──
-        (
-            PublicKey::Secp256k1(key_bytes),
-            SignMode::Secp256k1 | SignMode::EcdsaLegacy | SignMode::Keccak256,
-        ) => verify_secp256k1(key_bytes, sign_doc_bytes, sig_bytes),
+        // ── Secp256k1 raw ECDSA (standard, SHA-256 digest) ──
+        (PublicKey::Secp256k1(key_bytes), SignMode::Secp256k1 | SignMode::EcdsaLegacy) => {
+            verify_secp256k1(key_bytes, sign_doc_bytes, sig_bytes)
+        }
+
+        // ── Secp256k1 ECDSA over a Keccak-256 digest (Ethereum convention) ──
+        //
+        // The digest is part of the signature scheme: a SHA-256-signed
+        // message never verifies here, and a Keccak-signed message never
+        // verifies under Secp256k1/EcdsaLegacy. Previously this mode was
+        // bundled into the SHA-256 arm, inverting both properties.
+        (PublicKey::Secp256k1(key_bytes), SignMode::Keccak256) => {
+            verify_secp256k1_keccak(key_bytes, sign_doc_bytes, sig_bytes)
+        }
 
         // ── EIP-191 personal_sign with full compressed public key ──
         //
@@ -333,6 +343,21 @@ fn verify_secp256k1(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::verify_secp256k1_bytes(key_bytes, message, sig_bytes)
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
+}
+
+/// secp256k1 ECDSA over a Keccak-256 digest (`SignMode::Keccak256`).
+///
+/// Single source of truth: `verify_secp256k1_keccak_bytes` in primitives
+/// hashes the message with Keccak-256 before ECDSA verification (the
+/// Ethereum convention). The signing side must sign the Keccak-256 digest
+/// of the message (`SigningKey::sign_digest`), never the SHA-256 hash.
+fn verify_secp256k1_keccak(
+    key_bytes: &[u8; 33],
+    message: &[u8],
+    sig_bytes: &[u8],
+) -> Result<(), SigningError> {
+    morpheum_primitives::crypto::verify_secp256k1_keccak_bytes(key_bytes, message, sig_bytes)
         .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
 }
 

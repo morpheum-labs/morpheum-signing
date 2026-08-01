@@ -343,10 +343,106 @@ async fn test_evm_sign_verify_roundtrip() {
 
     assert_eq!(verified.account_ids.len(), 1);
     assert_eq!(verified.wallet_type, WalletType::Evm);
-    assert!(matches!(
-        verified.sign_mode,
-        SignMode::Secp256k1 | SignMode::EcdsaLegacy | SignMode::Keccak256
-    ));
+    // EvmSigner declares `WalletType::Evm::default_sign_mode()` — exactly
+    // `Secp256k1`. The loose `Secp256k1 | EcdsaLegacy | Keccak256` match this
+    // replaces would have masked mode drift: Keccak256 is a *different digest
+    // scheme* whose signatures are not interchangeable with these.
+    assert_eq!(verified.sign_mode, SignMode::Secp256k1);
+}
+
+/// Test-local secp256k1 signer that declares `SignMode::Keccak256`.
+///
+/// `keccak: true` signs the Keccak-256 digest of the `SignDoc` — the mode's
+/// documented Ethereum convention. `keccak: false` deliberately signs the
+/// SHA-256 hash while still declaring `Keccak256`, reproducing the defect the
+/// verifier's split arms guard against.
+struct KeccakModeSigner {
+    signing_key: k256::ecdsa::SigningKey,
+    keccak: bool,
+}
+
+impl KeccakModeSigner {
+    fn new(keccak: bool) -> Self {
+        Self {
+            signing_key: k256::ecdsa::SigningKey::from_slice(&TEST_SEED)
+                .expect("valid secp256k1 seed"),
+            keccak,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Signer for KeccakModeSigner {
+    async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
+        use k256::ecdsa::signature::{DigestSigner, Signer as _};
+        use prost::Message as _;
+        use sha3::{Digest, Keccak256};
+
+        let bytes = sign_doc.encode_to_vec();
+        let sig: k256::ecdsa::Signature = if self.keccak {
+            self.signing_key
+                .sign_digest(Keccak256::new_with_prefix(&bytes))
+        } else {
+            self.signing_key.sign(&bytes)
+        };
+        Ok(Signature::Secp256k1(
+            sig.to_bytes().as_slice().try_into().expect("64-byte sig"),
+        ))
+    }
+
+    fn public_key(&self) -> PublicKey {
+        PublicKey::Secp256k1(
+            self.signing_key
+                .verifying_key()
+                .to_sec1_bytes()
+                .as_ref()
+                .try_into()
+                .expect("33-byte compressed key"),
+        )
+    }
+
+    fn wallet_type(&self) -> WalletType {
+        WalletType::Evm
+    }
+
+    fn sign_mode(&self) -> SignMode {
+        SignMode::Keccak256
+    }
+}
+
+/// `SignMode::Keccak256` end-to-end: the mode routes to Keccak-256 digest
+/// verification, and only Keccak-signed signatures satisfy it.
+///
+/// The rejection case is the regression guard for the original defect:
+/// `Keccak256` was bundled into the SHA-256 verify arm, so a SHA-256-signed
+/// tx declaring `Keccak256` verified successfully while a correct
+/// Ethereum-convention signer was rejected. Re-merging the arms fails the
+/// second assertion.
+#[tokio::test]
+async fn test_keccak256_mode_routes_to_keccak_digest_verification() {
+    let msg = payload_to_any(
+        "type.googleapis.com/bank.v1.MsgTransferRequest",
+        &bank_transfer_payload("0xABCDabcd", "0xDEADdead", "1000"),
+    );
+
+    let signed = TxBuilder::new(KeccakModeSigner::new(true))
+        .chain_id("morpheum-test-1")
+        .add_message(msg.clone())
+        .sign()
+        .await
+        .expect("keccak-mode signing failed");
+    let verified = verify_signed_tx(&signed, "morpheum-test-1", 0, &[], now_secs())
+        .expect("keccak-signed tx must verify under SignMode::Keccak256");
+    assert_eq!(verified.sign_mode, SignMode::Keccak256);
+
+    let mislabeled = TxBuilder::new(KeccakModeSigner::new(false))
+        .chain_id("morpheum-test-1")
+        .add_message(msg)
+        .sign()
+        .await
+        .expect("signing itself succeeds");
+    verify_signed_tx(&mislabeled, "morpheum-test-1", 0, &[], now_secs())
+        .expect_err("a SHA-256-signed tx declaring SignMode::Keccak256 must be rejected");
 }
 
 /// SolanaSigner (ed25519) → roundtrip verification.
