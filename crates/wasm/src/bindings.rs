@@ -236,7 +236,7 @@ pub fn build_sign_doc_bytes(
     account_number: Option<u64>,
     genesis_hash: Option<Vec<u8>>,
 ) -> Result<JsValue, JsValue> {
-    use crate::core::proto::tx::v1::{self as tx, AuthInfo, ModeInfo, SignDoc, SignerInfo, TxBody};
+    use crate::core::proto::tx::v1::{self as tx, AuthInfo, ModeInfo, SignerInfo, TxBody};
 
     let addr_hex = signer_address.strip_prefix("0x").unwrap_or(&signer_address);
     let key_bytes = hex::decode(addr_hex)
@@ -281,14 +281,15 @@ pub fn build_sign_doc_bytes(
     let body_bytes = body.encode_to_vec();
     let auth_info_bytes = auth_info.encode_to_vec();
 
-    let sign_doc = SignDoc {
-        body_bytes: body_bytes.clone(),
-        auth_info_bytes: auth_info_bytes.clone(),
-        chain_id,
-        account_number: account_number.unwrap_or(0),
-        genesis_hash: genesis_hash.unwrap_or_default(),
-    };
-    let sign_doc_bytes = sign_doc.encode_to_vec();
+    // Assembled through the preimage SSOT in `morpheum-primitives` so browser
+    // and native signers produce byte-identical preimages.
+    let sign_doc_bytes = crate::core::sign_doc_signing_bytes(
+        body_bytes.clone(),
+        auth_info_bytes.clone(),
+        &chain_id,
+        account_number.unwrap_or(0),
+        genesis_hash.unwrap_or_default(),
+    );
 
     let hash_hex = hex::encode(sha2::Sha256::digest(&sign_doc_bytes));
 

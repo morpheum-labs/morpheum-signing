@@ -75,6 +75,16 @@ pub use morpheum_primitives::pb as proto;
 /// taking a direct primitives dependency.
 pub use morpheum_primitives::tx_class;
 
+/// `SIGN_MODE_DIRECT` signing-preimage SSOT, re-exported so downstream signers
+/// (the WASM bindings, `morpheum-sdk-core`) assemble the preimage through the
+/// same function this crate's builder and verifier use, without taking a direct
+/// primitives dependency.
+///
+/// The preimage's field list is a consensus rule; every producer and consumer
+/// resolving to one definition is what stops a signer and a verifier from
+/// disagreeing about which signatures are valid.
+pub use morpheum_primitives::tx::{canonical_sign_doc, sign_doc_signing_bytes};
+
 /// Prost Any re-export (used heavily in TxBody.messages).
 pub use crate::proto::Any;
 

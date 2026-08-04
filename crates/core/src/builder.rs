@@ -12,13 +12,12 @@ use core::fmt;
 use prost::Message;
 
 use crate::{
+    canonical_sign_doc,
     claim::TradingKeyClaim,
     error::SigningError,
     mapper::{AddressMapper, DefaultAddressMapper},
     nonce::{BoxedNonceProvider, NonceProvider},
-    proto::tx::v1::{
-        self as tx, AuthInfo, ModeInfo, Nonce, SignDoc, SignerInfo, Tx, TxBody, TxRaw,
-    },
+    proto::tx::v1::{self as tx, AuthInfo, ModeInfo, Nonce, SignerInfo, Tx, TxBody, TxRaw},
     signer::Signer,
     types::{SignedTx, SigningOptions},
     wallet_adapter::{BoxedWalletAdapter, WalletAdapter},
@@ -443,17 +442,22 @@ impl<S: Signer> TxBuilder<S> {
         let body_bytes = body.encode_to_vec();
         let auth_info_bytes = auth_info.encode_to_vec();
 
-        // 5. Build SignDoc (the exact bytes that get signed). The
-        // `genesis_hash` field (Phase M3 — `O20` / `C12`) binds the signature
-        // to a specific chain instance so a valid signature cannot be
-        // replayed on a forked chain that happens to share a `chain_id`.
-        let sign_doc = SignDoc {
-            body_bytes: body_bytes.clone(),
-            auth_info_bytes: auth_info_bytes.clone(),
-            chain_id: self.chain_id,
-            account_number: self.account_number.unwrap_or(0),
-            genesis_hash: self.genesis_hash,
-        };
+        // 5. Build SignDoc (the exact bytes that get signed) through the
+        // preimage SSOT in `morpheum-primitives`. The `genesis_hash` field
+        // (Phase M3 — `O20` / `C12`) binds the signature to a specific chain
+        // instance so a valid signature cannot be replayed on a forked chain
+        // that happens to share a `chain_id`.
+        //
+        // Assembled there rather than here so this signer cannot drift from
+        // the verifiers: a field added to the preimage lands on both sides at
+        // once, by construction.
+        let sign_doc = canonical_sign_doc(
+            body_bytes.clone(),
+            auth_info_bytes.clone(),
+            &self.chain_id,
+            self.account_number.unwrap_or(0),
+            self.genesis_hash,
+        );
 
         // 6. Perform signing
         let signature = self.signer.sign(&sign_doc).await?;
@@ -496,7 +500,7 @@ mod tests {
     //! §3 for the H2 hypothesis taxonomy.
 
     use super::*;
-    use crate::proto::tx::v1::Tx as ProtoTx;
+    use crate::proto::tx::v1::{SignDoc, Tx as ProtoTx};
     use crate::types::{PublicKey, Signature, WalletType};
     use async_trait::async_trait;
     use morpheum_primitives::priority_fee::{parse_tip_oneirs, MIN_TIP_ONEIRS};
