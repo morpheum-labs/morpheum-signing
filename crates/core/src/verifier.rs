@@ -26,7 +26,8 @@ use prost::Message;
 use crate::{
     claim::TradingKeyClaim,
     error::{CryptoError, SigningError},
-    proto::tx::v1::{self as tx, AuthInfo, SignDoc, SignMode, SignerInfo, TxBody},
+    proto::tx::v1::{self as tx, AuthInfo, SignMode, SignerInfo, TxBody},
+    sign_doc_signing_bytes,
     types::{AccountId, PublicKey, SignedTx, WalletType},
 };
 
@@ -164,14 +165,15 @@ pub fn verify_signed_tx(
         None => (body.encode_to_vec(), auth_info.encode_to_vec()),
     };
 
-    let sign_doc = SignDoc {
+    // Assembled through the preimage SSOT in `morpheum-primitives` so this
+    // verifier cannot drift from the builder that produced the signature.
+    let sign_doc_bytes = sign_doc_signing_bytes(
         body_bytes,
         auth_info_bytes,
-        chain_id: chain_id.into(),
+        chain_id,
         account_number,
-        genesis_hash: genesis_hash.to_vec(),
-    };
-    let sign_doc_bytes = sign_doc.encode_to_vec();
+        genesis_hash.to_vec(),
+    );
 
     // ── Verify each signer ──
     let mut account_ids = Vec::with_capacity(signer_infos.len());
