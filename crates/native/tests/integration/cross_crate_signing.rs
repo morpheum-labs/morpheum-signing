@@ -22,6 +22,17 @@ use morpheum_crypto::standards::registry::{
     create_typed_data_from_payload, register_all_actions, ActionRegistry,
 };
 use morpheum_crypto::types::domain_testnet;
+use morpheum_signing_core::TxVerifyContext;
+/// Builds a verifying context for these tests. The policy inputs (chain id,
+/// genesis hash, fork version) travel together so this suite exercises the same
+/// shape production does.
+fn vctx<'a>(chain_id: &'a str, genesis_hash: &'a [u8]) -> TxVerifyContext<'a> {
+    TxVerifyContext {
+        chain_id,
+        genesis_hash,
+        fork_version: 0,
+    }
+}
 
 // ==================== HELPERS ====================
 
@@ -139,7 +150,7 @@ async fn test_order_payload_to_native_signing_roundtrip() {
     );
 
     // 6. Cryptographic roundtrip verification
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("verify_signed_tx failed");
     assert_eq!(verified.account_ids.len(), 1);
     assert_eq!(verified.wallet_type, WalletType::Native);
@@ -191,7 +202,7 @@ async fn test_msgfactory_eip712_to_signing() {
     assert!(!signed_tx.tx.signatures[0].is_empty());
 
     // 5. Cryptographic verification
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("roundtrip verification failed");
     assert_eq!(verified.account_ids.len(), 1);
 }
@@ -220,7 +231,7 @@ async fn test_bank_transfer_payload_roundtrip() {
     );
 
     // Cryptographic verification
-    let verified = verify_signed_tx(&signed_tx, "morpheum-mainnet-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-mainnet-1", &[]), 0, now_secs())
         .expect("verification failed");
     assert_eq!(verified.wallet_type, WalletType::Native);
 }
@@ -247,7 +258,7 @@ async fn test_native_sign_verify_roundtrip() {
         .await
         .expect("native signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("native verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -305,7 +316,7 @@ async fn test_agent_claim_roundtrip() {
     );
 
     // Full cryptographic verification + claim extraction
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("agent verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -338,7 +349,7 @@ async fn test_evm_sign_verify_roundtrip() {
         .await
         .expect("EVM signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("EVM verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -432,7 +443,7 @@ async fn test_keccak256_mode_routes_to_keccak_digest_verification() {
         .sign()
         .await
         .expect("keccak-mode signing failed");
-    let verified = verify_signed_tx(&signed, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("keccak-signed tx must verify under SignMode::Keccak256");
     assert_eq!(verified.sign_mode, SignMode::Keccak256);
 
@@ -442,7 +453,7 @@ async fn test_keccak256_mode_routes_to_keccak_digest_verification() {
         .sign()
         .await
         .expect("signing itself succeeds");
-    verify_signed_tx(&mislabeled, "morpheum-test-1", 0, &[], now_secs())
+    verify_signed_tx(&mislabeled, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect_err("a SHA-256-signed tx declaring SignMode::Keccak256 must be rejected");
 }
 
@@ -462,7 +473,7 @@ async fn test_solana_sign_verify_roundtrip() {
         .await
         .expect("Solana signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("Solana verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
@@ -563,7 +574,7 @@ async fn test_multiple_standards_messages_in_single_tx() {
     );
 
     // Verify roundtrip
-    let verified = verify_signed_tx(&signed_tx, "morpheum-test-1", 0, &[], now_secs())
+    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
         .expect("multi-message verification failed");
     assert_eq!(verified.body.messages.len(), 2);
     assert_eq!(verified.account_ids.len(), 1);

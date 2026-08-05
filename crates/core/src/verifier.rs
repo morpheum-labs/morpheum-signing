@@ -21,13 +21,14 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use morpheum_primitives::tx::TxVerifyContext;
 use prost::Message;
 
 use crate::{
+    accepted_preimages,
     claim::TradingKeyClaim,
     error::{CryptoError, SigningError},
     proto::tx::v1::{self as tx, AuthInfo, SignMode, SignerInfo, TxBody},
-    sign_doc_signing_bytes,
     types::{AccountId, PublicKey, SignedTx, WalletType},
 };
 
@@ -104,15 +105,14 @@ pub struct VerifiedTx {
 /// # Parameters
 ///
 /// - `signed_tx`: The decoded transaction (from [`SignedTx::decode`]).
-/// - `chain_id`: The chain identifier from node configuration.
+/// - `ctx`: The verifying runtime's chain id, genesis hash and fork version.
+///   Taking the whole context rather than loose fields is deliberate: the
+///   accepted preimages are chosen by
+///   [`morpheum_primitives::tx::accepted_preimages`] from exactly these three,
+///   so this verifier and `crypto::verify_tx` cannot be handed different policy
+///   inputs and reach different conclusions about the same transaction.
 /// - `account_number`: The on-chain account number (for `SignDoc` reconstruction).
 ///   Use `0` if the chain does not enforce account-number binding.
-/// - `genesis_hash`: Raw genesis-block hash bytes of the verifying chain
-///   (Phase M3 — `O20` / `C12`). Bound into the reconstructed `SignDoc` so a
-///   valid signature on chain A cannot be replayed on chain B even when both
-///   share a `chain_id`. Pass an empty slice to preserve pre-fork behaviour
-///   (advisory-only); downstream policy gates strict enforcement via the
-///   runtime's fork version.
 /// - `now`: Current Unix timestamp in seconds (for `TradingKeyClaim` expiry).
 ///
 /// # Errors
@@ -120,13 +120,14 @@ pub struct VerifiedTx {
 /// Returns [`SigningError`] if:
 /// - The transaction is missing required fields (`body`, `auth_info`).
 /// - Signer count mismatches signature count.
-/// - Any signature fails cryptographic verification.
+/// - Any signature verifies under none of the accepted preimages.
+/// - A binding would be vacuous (strict fork with an unset genesis hash, or a
+///   transaction carrying no nonce under the strict nonce fork).
 /// - A `TradingKeyClaim` is malformed, expired, or has issuer mismatch.
 pub fn verify_signed_tx(
     signed_tx: &SignedTx,
-    chain_id: &str,
+    ctx: &TxVerifyContext<'_>,
     account_number: u64,
-    genesis_hash: &[u8],
     now: u64,
 ) -> Result<VerifiedTx, SigningError> {
     let tx = &signed_tx.tx;
@@ -165,15 +166,19 @@ pub fn verify_signed_tx(
         None => (body.encode_to_vec(), auth_info.encode_to_vec()),
     };
 
-    // Assembled through the preimage SSOT in `morpheum-primitives` so this
-    // verifier cannot drift from the builder that produced the signature.
-    let sign_doc_bytes = sign_doc_signing_bytes(
+    // The accepted preimages come from the policy SSOT in `morpheum-primitives`,
+    // the same function `crypto::verify_tx` uses. Both verifiers run on the same
+    // admission path for the same node, so a hand-copied ladder here could drift
+    // across the repo boundary and leave the two disagreeing about which
+    // signatures are valid — a chain split, not a lint.
+    let ladder = accepted_preimages(
         body_bytes,
         auth_info_bytes,
-        chain_id,
         account_number,
-        genesis_hash.to_vec(),
-    );
+        signed_tx.tx.nonce,
+        ctx,
+    )
+    .map_err(|e| SigningError::signing(alloc::format!("{e}")))?;
 
     // ── Verify each signer ──
     let mut account_ids = Vec::with_capacity(signer_infos.len());
@@ -191,8 +196,29 @@ pub fn verify_signed_tx(
         // 2. Determine sign mode from mode_info
         let mode = extract_sign_mode(si);
 
-        // 3. Cryptographic signature verification
-        verify_signature(&pubkey, &sign_doc_bytes, &signatures[i], mode)?;
+        // 3. Cryptographic signature verification, strictest rung first so a
+        //    fully bound signer costs exactly one verification and never
+        //    touches the advisory fallbacks.
+        let mut verified = false;
+        let mut strictest_err = None;
+        for (_, preimage) in &ladder {
+            match verify_signature(&pubkey, preimage, &signatures[i], mode) {
+                Ok(()) => {
+                    verified = true;
+                    break;
+                }
+                Err(e) => strictest_err = strictest_err.or(Some(e)),
+            }
+        }
+        if !verified {
+            // Report against the strictest preimage — the one a correctly
+            // built signer was expected to produce.
+            return Err(strictest_err.unwrap_or_else(|| {
+                SigningError::signing(alloc::format!(
+                    "signer_info[{i}] verified under no accepted preimage"
+                ))
+            }));
+        }
 
         // 4. Map public key to canonical AccountId
         account_ids.push(pubkey.to_account_id());

@@ -235,6 +235,7 @@ pub fn build_sign_doc_bytes(
     memo: Option<String>,
     account_number: Option<u64>,
     genesis_hash: Option<Vec<u8>>,
+    nonce: Option<Vec<u8>>,
 ) -> Result<JsValue, JsValue> {
     use crate::core::proto::tx::v1::{self as tx, AuthInfo, ModeInfo, SignerInfo, TxBody};
 
@@ -283,12 +284,24 @@ pub fn build_sign_doc_bytes(
 
     // Assembled through the preimage SSOT in `morpheum-primitives` so browser
     // and native signers produce byte-identical preimages.
+    // `nonce` is the proto-encoded `Nonce` the caller will stamp onto
+    // `Tx.nonce`. Taking the encoded bytes rather than the three scalar fields
+    // is deliberate: the caller passes the very value it stamps, so the signed
+    // preimage cannot drift from what ends up on the wire — which is precisely
+    // the gap `FORK_VERSION_STRICT_NONCE_BINDING` exists to close. Omitting it
+    // yields a pre-binding signature, valid only while that fork is advisory.
+    let nonce = nonce
+        .map(|raw| tx::Nonce::decode(raw.as_slice()))
+        .transpose()
+        .map_err(|e| JsValue::from_str(&format!("invalid nonce encoding: {e}")))?;
+
     let sign_doc_bytes = crate::core::sign_doc_signing_bytes(
         body_bytes.clone(),
         auth_info_bytes.clone(),
         &chain_id,
         account_number.unwrap_or(0),
         genesis_hash.unwrap_or_default(),
+        nonce,
     );
 
     let hash_hex = hex::encode(sha2::Sha256::digest(&sign_doc_bytes));
