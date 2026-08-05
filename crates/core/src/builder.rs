@@ -451,12 +451,21 @@ impl<S: Signer> TxBuilder<S> {
         // Assembled there rather than here so this signer cannot drift from
         // the verifiers: a field added to the preimage lands on both sides at
         // once, by construction.
+        // The nonce resolved in step 1 is stamped onto `Tx.nonce` below, and is
+        // bound here so the two cannot diverge. `Tx.nonce` used to sit outside
+        // the signature entirely, which let an observer rewrite it on a validly
+        // signed transaction and resubmit — see `FORK_VERSION_STRICT_NONCE_BINDING`.
+        //
+        // This builder always resolves a concrete nonce (manual > provider >
+        // default), so it always binds one; it never emits the `None` that a
+        // pre-binding signer produced.
         let sign_doc = canonical_sign_doc(
             body_bytes.clone(),
             auth_info_bytes.clone(),
             &self.chain_id,
             self.account_number.unwrap_or(0),
             self.genesis_hash,
+            Some(nonce),
         );
 
         // 6. Perform signing

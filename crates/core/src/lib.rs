@@ -83,7 +83,9 @@ pub use morpheum_primitives::tx_class;
 /// The preimage's field list is a consensus rule; every producer and consumer
 /// resolving to one definition is what stops a signer and a verifier from
 /// disagreeing about which signatures are valid.
-pub use morpheum_primitives::tx::{canonical_sign_doc, sign_doc_signing_bytes};
+pub use morpheum_primitives::tx::{
+    accepted_preimages, canonical_sign_doc, sign_doc_signing_bytes, TxVerifyContext,
+};
 
 /// Prost Any re-export (used heavily in TxBody.messages).
 pub use crate::proto::Any;
