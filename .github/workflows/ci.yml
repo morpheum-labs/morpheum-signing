@@ -80,6 +80,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - name: Install protoc
         # `morpheum-proto` generates its bindings with prost-build, which
         # shells out to protoc. The runner image does not ship it.
@@ -96,3 +97,15 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo test
         run: cargo test --workspace --all-features
+      - name: cargo check (wasm32 — the target crates/wasm actually ships to)
+        # Every step above builds for the host, and `crates/wasm/src/lib.rs`
+        # carries `#![cfg(target_arch = "wasm32")]`. On the host it is an EMPTY
+        # crate: a green workspace run says nothing whatsoever about the code
+        # `wasm-pack` publishes, and an arity break in `build_sign_doc_bytes`
+        # has already reached `main` through exactly that blind spot.
+        #
+        # Default features on purpose — that is what `wasm-pack build` uses, so
+        # this gates the shipped configuration. `--all-features` would add
+        # `cryptogram`, whose transitive `mio` does not build for wasm32 at all,
+        # gating a configuration nobody can ship.
+        run: cargo check --target wasm32-unknown-unknown -p morpheum-signing-wasm
