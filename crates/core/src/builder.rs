@@ -30,12 +30,14 @@ use crate::{
 pub struct TxBuilder<S: Signer> {
     signer: S,
     chain_id: String,
-    /// Optional genesis hash (raw bytes, typically a SHA-256 digest of the
-    /// target chain's genesis block) that will be bound into the `SignDoc`
-    /// preimage. Phase M3 (`O20` / audit row `C12`): defaults to an empty
-    /// byte string for backward compatibility with pre-fork signers; callers
-    /// targeting the strict-binding fork MUST set it explicitly via
-    /// [`TxBuilder::with_genesis_hash`].
+    /// Genesis hash of the target chain, bound into the `SignDoc` preimage so
+    /// a signature cannot be replayed onto a different chain instance sharing
+    /// this one's `chain_id` (Phase M3 — `O20` / audit row `C12`).
+    ///
+    /// Empty means unbound, which verifiers still accept while
+    /// `FORK_VERSION_STRICT_GENESIS_BINDING` is advisory — such a signature
+    /// lands on the `GenesisUnbound` preimage rung. Set it via
+    /// [`TxBuilder::with_genesis_hash`] whenever the value is available.
     genesis_hash: Vec<u8>,
     account_number: Option<u64>,
     memo: Option<String>,
@@ -120,12 +122,20 @@ impl<S: Signer> TxBuilder<S> {
     }
 
     /// Binds the transaction signing preimage to the target chain's genesis
-    /// hash (Phase M3 — audit `O20` / row `C12`).
+    /// hash (Phase M3 — audit `O20` / row `C12`). **Set this whenever you can.**
     ///
-    /// Leaving this unset produces a `SignDoc` with an empty `genesis_hash`
-    /// byte string, which remains valid pre-fork. At/after the strict-binding
-    /// fork activates, callers MUST set the correct genesis hash or the
-    /// resulting signature will be rejected by `verify_tx`.
+    /// Without it a signature authorises the transaction on *any* chain that
+    /// shares this one's `chain_id` — exactly the cross-chain replay the
+    /// binding exists to prevent.
+    ///
+    /// Not yet enforced at [`sign`](Self::sign), because no RPC currently
+    /// exposes the chain's genesis hash, so callers have no way to obtain one:
+    /// refusing here would leave them unable to sign at all. Verifiers accept
+    /// unbound signatures while
+    /// [`FORK_VERSION_STRICT_GENESIS_BINDING`](morpheum_primitives::consensus_wire::FORK_VERSION_STRICT_GENESIS_BINDING)
+    /// is advisory — they land on the `GenesisUnbound` rung. Enforcement here
+    /// is what will eventually let that fork activate, and is gated on giving
+    /// clients a source for the value first.
     #[must_use]
     pub fn with_genesis_hash(mut self, hash: impl Into<Vec<u8>>) -> Self {
         self.genesis_hash = hash.into();
@@ -546,6 +556,11 @@ mod tests {
         }
     }
 
+    /// Stand-in genesis hash for tests that are not about the genesis binding.
+    /// `sign` refuses an unbound preimage, so every signing test must supply
+    /// one; the value is irrelevant to these assertions, only its presence.
+    const TEST_GENESIS_HASH: [u8; 32] = [0x5A; 32];
+
     /// Pin A — proto round-trip determinism for the four-value boundary
     /// table `tip_oneirs ∈ {0, 1, MIN_TIP_ONEIRS, u128::MAX}`.
     ///
@@ -567,6 +582,7 @@ mod tests {
         for &tip_oneirs in &TABLE {
             let signed = TxBuilder::new(StubSigner)
                 .chain_id("morpheum-test-1")
+                .with_genesis_hash(TEST_GENESIS_HASH)
                 .add_message(stub_message())
                 .priority_tip(tip_oneirs)
                 .sign()
@@ -649,6 +665,7 @@ mod tests {
     async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_one_emits_canonical_wire_triple() {
         let signed = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
+            .with_genesis_hash(TEST_GENESIS_HASH)
             .add_message(stub_message())
             .priority_tip(1)
             .sign()
@@ -692,6 +709,7 @@ mod tests {
     async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_zero_omits_canonical_wire_triple() {
         let signed = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
+            .with_genesis_hash(TEST_GENESIS_HASH)
             .add_message(stub_message())
             .priority_tip(0)
             .sign()
@@ -738,6 +756,7 @@ mod tests {
     async fn phase22x5_d_stage_2_e_1_tx_builder_urgent_round_trips_on_wire() {
         let signed_urgent = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
+            .with_genesis_hash(TEST_GENESIS_HASH)
             .add_message(stub_message())
             .urgent(true)
             .sign()
@@ -776,6 +795,7 @@ mod tests {
         // proto3 default-value path.
         let signed_non_urgent = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
+            .with_genesis_hash(TEST_GENESIS_HASH)
             .add_message(stub_message())
             .urgent(false)
             .sign()

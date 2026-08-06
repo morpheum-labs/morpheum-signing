@@ -13,6 +13,7 @@ pub async fn test_builder_rejects_empty_messages() {
 
     let result = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Test without messages")
         .sign()
         .await;
@@ -52,6 +53,7 @@ pub async fn test_expired_trading_key_claim() {
 
     let result = agent(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(Any {
             type_url: "type.googleapis.com/market.v1.MsgCreateMarketRequest".to_string(),
             value: vec![],

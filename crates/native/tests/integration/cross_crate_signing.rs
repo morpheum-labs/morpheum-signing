@@ -26,6 +26,11 @@ use morpheum_signing_core::TxVerifyContext;
 /// Builds a verifying context for these tests. The policy inputs (chain id,
 /// genesis hash, fork version) travel together so this suite exercises the same
 /// shape production does.
+/// Stand-in genesis hash for this suite. `TxBuilder::sign` refuses an unbound
+/// preimage, so every signing test must bind one; verification must then use
+/// the same value, exactly as a real client and validator pair do.
+const TEST_GENESIS_HASH: [u8; 32] = [0x5A; 32];
+
 fn vctx<'a>(chain_id: &'a str, genesis_hash: &'a [u8]) -> TxVerifyContext<'a> {
     TxVerifyContext {
         chain_id,
@@ -117,6 +122,7 @@ async fn test_order_payload_to_native_signing_roundtrip() {
 
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .memo("Cross-crate: OrderBuilder → NativeSigner")
         .with_nonce_provider(nonce_provider)
         .add_message(msg)
@@ -150,8 +156,13 @@ async fn test_order_payload_to_native_signing_roundtrip() {
     );
 
     // 6. Cryptographic roundtrip verification
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("verify_signed_tx failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("verify_signed_tx failed");
     assert_eq!(verified.account_ids.len(), 1);
     assert_eq!(verified.wallet_type, WalletType::Native);
     assert_eq!(verified.sign_mode, SignMode::Ed25519);
@@ -189,6 +200,7 @@ async fn test_msgfactory_eip712_to_signing() {
     let signer = NativeSigner::from_seed(&TEST_SEED);
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .memo("Cross-crate: MessageFactory → signing")
         .add_message(msg)
         .sign()
@@ -202,8 +214,13 @@ async fn test_msgfactory_eip712_to_signing() {
     assert!(!signed_tx.tx.signatures[0].is_empty());
 
     // 5. Cryptographic verification
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("roundtrip verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("roundtrip verification failed");
     assert_eq!(verified.account_ids.len(), 1);
 }
 
@@ -216,6 +233,7 @@ async fn test_bank_transfer_payload_roundtrip() {
     let signer = NativeSigner::from_seed(&TEST_SEED);
     let signed_tx = native(signer)
         .chain_id("morpheum-mainnet-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .add_message(msg)
         .sign()
         .await
@@ -231,8 +249,13 @@ async fn test_bank_transfer_payload_roundtrip() {
     );
 
     // Cryptographic verification
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-mainnet-1", &[]), 0, now_secs())
-        .expect("verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-mainnet-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("verification failed");
     assert_eq!(verified.wallet_type, WalletType::Native);
 }
 
@@ -251,6 +274,7 @@ async fn test_native_sign_verify_roundtrip() {
 
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .memo("roundtrip-native")
         .with_nonce_provider(nonce_provider)
         .add_message(msg)
@@ -258,8 +282,13 @@ async fn test_native_sign_verify_roundtrip() {
         .await
         .expect("native signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("native verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("native verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
     assert_eq!(verified.wallet_type, WalletType::Native);
@@ -301,6 +330,7 @@ async fn test_agent_claim_roundtrip() {
 
     let signed_tx = agent(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .memo("Agent with claim")
         .with_trading_key_claim(claim.clone())
         .add_message(msg)
@@ -316,8 +346,13 @@ async fn test_agent_claim_roundtrip() {
     );
 
     // Full cryptographic verification + claim extraction
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("agent verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("agent verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
     // Ed25519 key → verifier infers Native (agent identity is in the claim)
@@ -343,14 +378,20 @@ async fn test_evm_sign_verify_roundtrip() {
 
     let signed_tx = evm(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .memo("EVM roundtrip")
         .add_message(msg)
         .sign()
         .await
         .expect("EVM signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("EVM verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("EVM verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
     assert_eq!(verified.wallet_type, WalletType::Evm);
@@ -439,22 +480,34 @@ async fn test_keccak256_mode_routes_to_keccak_digest_verification() {
 
     let signed = TxBuilder::new(KeccakModeSigner::new(true))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .add_message(msg.clone())
         .sign()
         .await
         .expect("keccak-mode signing failed");
-    let verified = verify_signed_tx(&signed, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("keccak-signed tx must verify under SignMode::Keccak256");
+    let verified = verify_signed_tx(
+        &signed,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("keccak-signed tx must verify under SignMode::Keccak256");
     assert_eq!(verified.sign_mode, SignMode::Keccak256);
 
     let mislabeled = TxBuilder::new(KeccakModeSigner::new(false))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .add_message(msg)
         .sign()
         .await
         .expect("signing itself succeeds");
-    verify_signed_tx(&mislabeled, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect_err("a SHA-256-signed tx declaring SignMode::Keccak256 must be rejected");
+    verify_signed_tx(
+        &mislabeled,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect_err("a SHA-256-signed tx declaring SignMode::Keccak256 must be rejected");
 }
 
 /// SolanaSigner (ed25519) → roundtrip verification.
@@ -468,13 +521,19 @@ async fn test_solana_sign_verify_roundtrip() {
 
     let signed_tx = solana(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .add_message(msg)
         .sign()
         .await
         .expect("Solana signing failed");
 
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("Solana verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("Solana verification failed");
 
     assert_eq!(verified.account_ids.len(), 1);
     // Solana uses ed25519, so verifier infers Native at the key level
@@ -555,6 +614,7 @@ async fn test_multiple_standards_messages_in_single_tx() {
     let signer = NativeSigner::from_seed(&TEST_SEED);
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .memo("Multi-message cross-crate")
         .add_message(msg1)
         .add_message(msg2)
@@ -574,8 +634,13 @@ async fn test_multiple_standards_messages_in_single_tx() {
     );
 
     // Verify roundtrip
-    let verified = verify_signed_tx(&signed_tx, &vctx("morpheum-test-1", &[]), 0, now_secs())
-        .expect("multi-message verification failed");
+    let verified = verify_signed_tx(
+        &signed_tx,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .expect("multi-message verification failed");
     assert_eq!(verified.body.messages.len(), 2);
     assert_eq!(verified.account_ids.len(), 1);
 }
@@ -657,6 +722,7 @@ async fn test_cross_crate_deterministic_signing() {
 
     let tx1 = native(NativeSigner::from_seed(&TEST_SEED))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .with_nonce_provider(nonce1)
         .add_message(msg())
         .sign()
@@ -665,6 +731,7 @@ async fn test_cross_crate_deterministic_signing() {
 
     let tx2 = native(NativeSigner::from_seed(&TEST_SEED))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
         .with_nonce_provider(nonce2)
         .add_message(msg())
         .sign()

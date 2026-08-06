@@ -23,6 +23,7 @@ async fn test_evm_full_signing_flow() {
 
     let signed_tx = evm(signer)
         .chain_id("morpheum-mainnet-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("EVM signing test")
         .with_nonce_provider(nonce_provider)
         .add_message(test_message())
@@ -42,6 +43,7 @@ async fn test_evm_signature_is_64_bytes() {
 
     let signed_tx = evm(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(test_message())
         .sign()
         .await
@@ -60,6 +62,7 @@ async fn test_solana_full_signing_flow() {
 
     let signed_tx = solana(signer)
         .chain_id("morpheum-mainnet-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Solana signing test")
         .with_nonce_provider(nonce_provider)
         .add_message(test_message())
@@ -78,6 +81,7 @@ async fn test_solana_signature_is_64_bytes() {
 
     let signed_tx = solana(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(test_message())
         .sign()
         .await
@@ -96,6 +100,7 @@ async fn test_bitcoin_full_signing_flow() {
 
     let signed_tx = bitcoin(signer)
         .chain_id("morpheum-mainnet-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Bitcoin Taproot signing test")
         .with_nonce_provider(nonce_provider)
         .add_message(test_message())
@@ -114,6 +119,7 @@ async fn test_bitcoin_signature_is_64_bytes() {
 
     let signed_tx = bitcoin(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(test_message())
         .sign()
         .await
@@ -131,6 +137,7 @@ async fn test_different_signers_produce_different_signatures() {
 
     let native_tx = native(NativeSigner::from_seed(&TEST_SEED))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg.clone())
         .sign()
         .await
@@ -138,6 +145,7 @@ async fn test_different_signers_produce_different_signatures() {
 
     let evm_tx = evm(EvmSigner::from_seed(&TEST_SEED))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg.clone())
         .sign()
         .await
@@ -145,6 +153,7 @@ async fn test_different_signers_produce_different_signatures() {
 
     let btc_tx = bitcoin(BitcoinSigner::from_seed(&TEST_SEED))
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg)
         .sign()
         .await
@@ -162,6 +171,7 @@ async fn test_signed_tx_has_tx_raw() {
 
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(test_message())
         .sign()
         .await
@@ -183,6 +193,7 @@ async fn test_txhash_hex_is_valid() {
 
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(test_message())
         .sign()
         .await
@@ -212,6 +223,7 @@ mod bip39_tests {
 
         let signed_tx = native(signer)
             .chain_id("morpheum-test-1")
+            .with_genesis_hash([0x5A_u8; 32])
             .add_message(test_message())
             .sign()
             .await
