@@ -93,11 +93,15 @@ impl TxBuilderWasm {
     }
 
     /// Binds the target chain's genesis hash into the signing preimage
-    /// (Phase M3 — audit `O20` / `C12`). **Required before `sign()`.**
+    /// (Phase M3 — audit `O20` / `C12`). **Set this whenever you can.**
     ///
     /// Without it the signature authorises this transaction on any chain
-    /// sharing the same `chainId`, so `sign()` rejects an unbound preimage
-    /// rather than producing one silently.
+    /// sharing the same `chainId` — the cross-chain replay the binding exists
+    /// to prevent. Not yet enforced at `sign()`, because no RPC exposes the
+    /// chain's genesis hash and callers would have no value to supply;
+    /// verifiers accept unbound signatures while
+    /// `FORK_VERSION_STRICT_GENESIS_BINDING` is advisory, placing them on the
+    /// `GenesisUnbound` preimage rung.
     #[wasm_bindgen(js_name = "withGenesisHash")]
     pub fn with_genesis_hash(mut self, genesis_hash: Vec<u8>) -> TxBuilderWasm {
         self.inner = self.inner.with_genesis_hash(genesis_hash);
@@ -227,6 +231,16 @@ impl TxBuilderWasm {
 /// genesis block hash at/after `FORK_VERSION_STRICT_GENESIS_BINDING`
 /// activates.
 ///
+/// `nonce` is **required**, and the encoding this bound is returned so the
+/// caller stamps that exact value onto `Tx.nonce`. It used to be a trailing
+/// `Option`, and every TypeScript caller omitted it: they signed a nonce-less
+/// preimage and then fabricated a fresh nonce at assembly time, shipping a
+/// replay-protection field that no signature covered. An observer could
+/// rewrite it and resubmit — the signature still verified, the dedup hash
+/// changed, and the transaction was admitted as a new one. Requiring it here
+/// and returning it makes signed-vs-sent divergence unrepresentable rather
+/// than merely discouraged.
+///
 /// Returns a JS object:
 /// ```typescript
 /// {
@@ -234,6 +248,7 @@ impl TxBuilderWasm {
 ///   signDocHash: string;        // hex(SHA-256(signDocBytes))
 ///   bodyBytes: Uint8Array;      // TxBody proto-encoded bytes
 ///   authInfoBytes: Uint8Array;  // AuthInfo proto-encoded bytes
+///   nonce: Uint8Array;          // the Nonce this preimage bound — stamp THIS on Tx.nonce
 /// }
 /// ```
 #[wasm_bindgen(js_name = "buildSignDocBytes")]
@@ -247,7 +262,7 @@ pub fn build_sign_doc_bytes(
     memo: Option<String>,
     account_number: Option<u64>,
     genesis_hash: Option<Vec<u8>>,
-    nonce: Option<Vec<u8>>,
+    nonce: Vec<u8>,
 ) -> Result<JsValue, JsValue> {
     use crate::core::proto::tx::v1::{self as tx, AuthInfo, ModeInfo, SignerInfo, TxBody};
 
@@ -262,6 +277,16 @@ pub fn build_sign_doc_bytes(
         "/cosmos.crypto.ed25519.PubKey"
     };
 
+    // Every field is written out explicitly, and deliberately without
+    // `..Default::default()`. This struct is a *signing preimage*: whatever it
+    // encodes to is what the signature covers, so the caller must send a
+    // `TxBody` that encodes identically or verification fails. A spread would
+    // let a newly added proto field default silently on this side while the
+    // wire carried something else — a signature over one transaction attached
+    // to another. Failing to compile when the proto grows is the safer
+    // outcome: it forces the value to be chosen rather than assumed. (That is
+    // exactly what happened with `tx_class` and `urgent`, which is why this
+    // crate stopped building.)
     let body = TxBody {
         messages: vec![crate::core::Any {
             type_url,
@@ -270,6 +295,8 @@ pub fn build_sign_doc_bytes(
         memo: memo.unwrap_or_default(),
         timeout_timestamp: None,
         priority_tip: String::new(),
+        tx_class: crate::core::tx_class::TxClass::Standard.to_wire(),
+        urgent: false,
     };
 
     let signer_info = SignerInfo {
@@ -302,9 +329,7 @@ pub fn build_sign_doc_bytes(
     // preimage cannot drift from what ends up on the wire — which is precisely
     // the gap `FORK_VERSION_STRICT_NONCE_BINDING` exists to close. Omitting it
     // yields a pre-binding signature, valid only while that fork is advisory.
-    let nonce = nonce
-        .map(|raw| tx::Nonce::decode(raw.as_slice()))
-        .transpose()
+    let nonce = tx::Nonce::decode(nonce.as_slice())
         .map_err(|e| JsValue::from_str(&format!("invalid nonce encoding: {e}")))?;
 
     let sign_doc_bytes = crate::core::sign_doc_signing_bytes(
@@ -313,7 +338,7 @@ pub fn build_sign_doc_bytes(
         &chain_id,
         account_number.unwrap_or(0),
         genesis_hash.unwrap_or_default(),
-        nonce,
+        Some(nonce),
     );
 
     let hash_hex = hex::encode(sha2::Sha256::digest(&sign_doc_bytes));
@@ -339,6 +364,16 @@ pub fn build_sign_doc_bytes(
         &js_sys::Uint8Array::from(auth_info_bytes.as_slice()).into(),
     )
     .map_err(|_| JsValue::from_str("failed to set authInfoBytes"))?;
+    // Re-encoded from the decoded value that was actually bound, so the caller
+    // stamps the signed nonce onto the wire rather than a look-alike it built
+    // separately. Returning it is what makes the two impossible to diverge:
+    // assembly has no other nonce to reach for.
+    js_sys::Reflect::set(
+        &obj,
+        &"nonce".into(),
+        &js_sys::Uint8Array::from(nonce.encode_to_vec().as_slice()).into(),
+    )
+    .map_err(|_| JsValue::from_str("failed to set nonce"))?;
 
     Ok(obj.into())
 }
