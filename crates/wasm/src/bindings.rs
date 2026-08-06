@@ -142,18 +142,14 @@ impl TxBuilderWasm {
 
     /// Attaches a `TradingKeyClaim` for agent delegation.
     ///
-    /// The claim object should have the following fields:
-    /// - `issuer`: `Uint8Array(32)` — issuer AccountId
-    /// - `subject`: `Uint8Array(32)` — subject AccountId
-    /// - `permissions`: `number` — permission bitflags
-    /// - `max_daily_usd`: `number` — daily USD spending limit
-    /// - `expiry_timestamp`: `number` — Unix seconds expiry
-    /// - `nonce_sub_range_start`: `number` — sub-range start (inclusive)
-    /// - `nonce_sub_range_end`: `number` — sub-range end (exclusive)
-    /// - `signature`: `Uint8Array(64)` — issuer's signature
-    /// - `signature_type`: `string` — "ed25519", "secp256k1", or "schnorr"
+    /// The claim object is the `TradingKeyClaimInput` shape declared in
+    /// `lib.rs`; `TradingKeyClaimJs` below is the Rust mirror it deserialises
+    /// into, and the two must stay field-for-field identical.
     #[wasm_bindgen(js_name = "withClaim")]
-    pub fn with_claim(mut self, claim_js: JsValue) -> Result<TxBuilderWasm, JsValue> {
+    pub fn with_claim(
+        mut self,
+        #[wasm_bindgen(unchecked_param_type = "TradingKeyClaimInput")] claim_js: JsValue,
+    ) -> Result<TxBuilderWasm, JsValue> {
         let js_claim: TradingKeyClaimJs = serde_wasm_bindgen::from_value(claim_js)
             .map_err(|e| JsValue::from_str(&format!("Invalid claim object: {e}")))?;
 
@@ -172,11 +168,8 @@ impl TxBuilderWasm {
     /// This builds the transaction, embeds the claim (if present), signs it
     /// with the connected wallet, and returns the fully signed transaction.
     ///
-    /// The result is a JS object with:
-    /// - `raw_bytes: Uint8Array` — ready for broadcast
-    /// - `tx_raw_bytes: Uint8Array` — TxRaw protobuf bytes (if available)
-    /// - `txhash: string` — SHA-256 hex of raw_bytes
-    #[wasm_bindgen]
+    /// The result is the `SignedTx` shape declared in `lib.rs`.
+    #[wasm_bindgen(unchecked_return_type = "SignedTx")]
     pub async fn sign(self) -> Result<JsValue, JsValue> {
         let signed_tx = self
             .inner
@@ -241,17 +234,11 @@ impl TxBuilderWasm {
 /// and returning it makes signed-vs-sent divergence unrepresentable rather
 /// than merely discouraged.
 ///
-/// Returns a JS object:
-/// ```typescript
-/// {
-///   signDocBytes: Uint8Array;   // SignDoc proto-encoded bytes
-///   signDocHash: string;        // hex(SHA-256(signDocBytes))
-///   bodyBytes: Uint8Array;      // TxBody proto-encoded bytes
-///   authInfoBytes: Uint8Array;  // AuthInfo proto-encoded bytes
-///   nonce: Uint8Array;          // the Nonce this preimage bound — stamp THIS on Tx.nonce
-/// }
-/// ```
-#[wasm_bindgen(js_name = "buildSignDocBytes")]
+/// Returns the `SignDocBytes` shape declared in `lib.rs`'s
+/// `typescript_custom_section` and named by this signature's
+/// `unchecked_return_type`. Described there rather than restated here, because
+/// that declaration is what consumers actually typecheck against.
+#[wasm_bindgen(js_name = "buildSignDocBytes", unchecked_return_type = "SignDocBytes")]
 pub fn build_sign_doc_bytes(
     type_url: String,
     msg_bytes: Vec<u8>,
@@ -545,7 +532,7 @@ impl VcClaimBuilderWasm {
     }
 
     /// Builds and validates the claim. `current_timestamp` is Unix seconds.
-    #[wasm_bindgen]
+    #[wasm_bindgen(unchecked_return_type = "TradingKeyClaimBuilt")]
     pub fn build(self, current_timestamp: u64) -> Result<JsValue, JsValue> {
         let claim = self
             .inner

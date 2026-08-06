@@ -34,32 +34,87 @@ pub fn version() -> String {
     core::VERSION.to_string()
 }
 
-// ==================== RICH TYPESCRIPT DEFINITIONS ====================
+// ==================== TYPESCRIPT SHAPES FOR `JsValue` RETURNS ====================
 
+/// Hand-written TypeScript for the shapes `wasm-bindgen` cannot infer.
+///
+/// # The one rule
+///
+/// **Never declare a symbol `wasm_bindgen` already generates.** Everything with
+/// a Rust signature — every `#[wasm_bindgen]` function, every exported class —
+/// is declared by the generated `.d.ts`, and that generated declaration is the
+/// single source of truth. This section is only for the *interior* of values
+/// typed `JsValue`, which `wasm-bindgen` can only render as `any`. Each
+/// interface below is bound to its producing signature by an
+/// `unchecked_return_type` / `unchecked_param_type` attribute in `bindings.rs`,
+/// so a shape cannot drift out of use unnoticed.
+///
+/// # Why the rule is absolute
+///
+/// This section used to re-declare `buildSignDocBytes`, `TxBuilderWasm` and
+/// `VcClaimBuilder` by hand, and all three drifted from the Rust they claimed
+/// to describe. TypeScript does not report that as a conflict — it *merges* it,
+/// and the two merge modes are each a distinct failure:
+///
+/// - **Functions become an overload set.** The stale eight-parameter
+///   `buildSignDocBytes` declaration outlived the fix that made `nonce`
+///   required, and TypeScript happily resolved eight-argument calls against it.
+///   So the compile error that was supposed to make a nonce-less preimage
+///   unrepresentable did not exist in the shipped package: a caller could still
+///   sign without binding a nonce, exactly the defect this crate closed. The
+///   declaration was the whole guard, and it silently was not one.
+/// - **Classes collide outright** (`TS2300: Duplicate identifier`), which made
+///   the package's own `.d.ts` invalid TypeScript and forced every consumer to
+///   set `skipLibCheck: true` — which is precisely what stopped anyone from
+///   seeing the overload above.
+///
+/// One root cause, two defects, and the second hid the first. A generated
+/// declaration cannot go stale; a hand-written copy of one always can.
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * Morpheum Signing SDK — TypeScript Definitions
+ * Morpheum Signing SDK — shapes for the values typed `any` by wasm-bindgen.
  *
- * Complete type definitions for the WASM signing library.
- * Includes transaction builder, claim support, and all wallet adapters.
+ * Signatures live in the generated declarations, not here. See the Rust doc
+ * comment on `TS_TYPES` for why that separation is load-bearing.
  */
 
-/** Fully signed transaction, ready for broadcast. */
-export interface SignedTx {
-    /** Full decoded tx.v1.Tx */
-    tx: any;
-    /** Raw signed bytes (TxRaw encoded) — pass directly to broadcast endpoint */
-    raw_bytes: Uint8Array;
-    /** Optional decoded TxRaw (for verification/debugging) */
-    tx_raw?: any;
+/**
+ * The canonical SignDoc bundle returned by `buildSignDocBytes`.
+ *
+ * `nonce` is the encoding the preimage actually bound, and it is on this
+ * interface for the same reason the parameter is required: the caller must
+ * stamp *this* value onto `Tx.nonce`. Minting a fresh one at assembly time
+ * ships a replay-protection field no signature covers, which is rewritable by
+ * any observer.
+ */
+export interface SignDocBytes {
+    /** SignDoc proto-encoded bytes — the signing preimage. */
+    signDocBytes: Uint8Array;
+    /** `hex(SHA-256(signDocBytes))`. */
+    signDocHash: string;
+    /** TxBody proto-encoded bytes. */
+    bodyBytes: Uint8Array;
+    /** AuthInfo proto-encoded bytes. */
+    authInfoBytes: Uint8Array;
+    /** The `Nonce` this preimage bound — stamp exactly this onto `Tx.nonce`. */
+    nonce: Uint8Array;
 }
 
-/** Signing options for the builder. */
-export interface SigningOptions {
-    deadline_seconds?: number;
-    memo?: string;
-    include_timestamp: boolean;
+/**
+ * Fully signed transaction, ready for broadcast.
+ *
+ * Field-for-field what `TxBuilderWasm.sign()` assembles; see its Rust body.
+ */
+export interface SignedTx {
+    /** Raw signed bytes (TxRaw encoded) — pass directly to the broadcast endpoint. */
+    raw_bytes: Uint8Array;
+    /** Full `tx.v1.Tx` protobuf bytes, for inspection and debugging. */
+    tx_bytes: Uint8Array;
+    /** `hex(SHA-256(raw_bytes))`. */
+    txhash: string;
+    /** `TxRaw` protobuf bytes, present only when the signer produced one. */
+    tx_raw_bytes?: Uint8Array;
 }
 
 /**
@@ -95,123 +150,6 @@ export interface TradingKeyClaimBuilt extends TradingKeyClaimInput {
     proto_any_type_url: string;
     /** Protobuf Any encoded value */
     proto_any_value: Uint8Array;
-}
-
-/**
- * Constructs canonical SignDoc bytes without requiring a connected wallet.
- *
- * This is the signer-less counterpart to TxBuilderWasm — it builds the same
- * protobuf structures but returns encoded bytes + SHA-256 hash instead of signing.
- * Callable from both browser and Node.js (via wasm-pack --target nodejs).
- *
- * @param type_url    Protobuf type URL (e.g., "/bucket.v1.MsgCreateBucketRequest")
- * @param msg_bytes   Pre-encoded protobuf message bytes
- * @param signer_address  Hex-encoded signer key (20-byte EVM or 32-byte Ed25519)
- * @param chain_type  ChainType enum value (1 = Ethereum, 2 = Solana, 3 = Bitcoin)
- * @param sign_mode   SignMode enum value
- * @param chain_id    Chain identifier (e.g., "morm-dev-1")
- * @param memo        Optional transaction memo
- * @param account_number  Optional account number (defaults to 0)
- */
-export function buildSignDocBytes(
-    type_url: string,
-    msg_bytes: Uint8Array,
-    signer_address: string,
-    chain_type: number,
-    sign_mode: number,
-    chain_id: string,
-    memo?: string,
-    account_number?: number,
-): {
-    signDocBytes: Uint8Array;
-    signDocHash: string;
-    bodyBytes: Uint8Array;
-    authInfoBytes: Uint8Array;
-};
-
-/**
- * Main transaction builder for browser use.
- *
- * Completely generic — messages added via addMessage(type_url, value).
- * Factory methods are **async** because they connect to the injected wallet.
- *
- * @example
- * ```typescript
- * const builder = await TxBuilderWasm.newMetamask();
- * const signedTx = await builder
- *     .chainId("morpheum-1")
- *     .memo("Hello from MetaMask!")
- *     .addMessage("type.googleapis.com/market.v1.MsgCreateOrder", encodedBytes)
- *     .sign();
- * ```
- */
-export class TxBuilderWasm {
-    private constructor();
-
-    /** MetaMask / Rabby / Ledger (EVM) — connects to window.ethereum */
-    static newMetamask(): Promise<TxBuilderWasm>;
-
-    /** Phantom / Solflare / Backpack (Solana) — connects to window.phantom.solana */
-    static newPhantom(): Promise<TxBuilderWasm>;
-
-    /** Unisat / Leather / Xverse (Bitcoin Taproot) — connects to window.unisat */
-    static newTaproot(): Promise<TxBuilderWasm>;
-
-    /** Sets the chain ID (e.g., "morpheum-1", "morpheum-test-1") */
-    chainId(chain_id: string): TxBuilderWasm;
-
-    /** Sets an optional memo */
-    memo(memo: string): TxBuilderWasm;
-
-    /** Sets the account number */
-    accountNumber(account_number: number): TxBuilderWasm;
-
-    /** Sets timeout in seconds since epoch */
-    timeoutSeconds(seconds: number): TxBuilderWasm;
-
-    /**
-     * Add any protobuf message (completely generic).
-     * @param type_url Full protobuf type URL (e.g., "type.googleapis.com/market.v1.MsgCreateOrder")
-     * @param value Protobuf-encoded message bytes
-     */
-    addMessage(type_url: string, value: Uint8Array): TxBuilderWasm;
-
-    /**
-     * Attaches a TradingKeyClaim for agent delegation.
-     * The claim is embedded in SignerInfo.signing_options and covered by the signature.
-     */
-    withClaim(claim: TradingKeyClaimInput): TxBuilderWasm;
-
-    /** Signs the transaction and returns the fully signed result. */
-    sign(): Promise<SignedTx>;
-}
-
-/**
- * Fluent builder for creating TradingKeyClaims from TypeScript.
- *
- * @example
- * ```typescript
- * const claim = new VcClaimBuilder()
- *     .issuer(issuerBytes)
- *     .subject(subjectBytes)
- *     .permissions(0x01)
- *     .maxDailyUsd(10000)
- *     .expiry(Math.floor(Date.now() / 1000) + 86400)
- *     .nonceSubRange(100, 200)
- *     .signature(sigBytes, "ed25519")
- *     .build(Math.floor(Date.now() / 1000));
- * ```
- */
-export class VcClaimBuilder {
-    constructor();
-    issuer(bytes: Uint8Array): VcClaimBuilder;
-    subject(bytes: Uint8Array): VcClaimBuilder;
-    permissions(perms: number): VcClaimBuilder;
-    maxDailyUsd(amount: number): VcClaimBuilder;
-    expiry(timestamp: number): VcClaimBuilder;
-    nonceSubRange(start: number, end: number): VcClaimBuilder;
-    signature(sig_bytes: Uint8Array, sig_type: "ed25519" | "secp256k1" | "schnorr"): VcClaimBuilder;
-    build(current_timestamp: number): TradingKeyClaimBuilt;
 }
 "#;
 
