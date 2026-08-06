@@ -20,6 +20,7 @@ pub async fn test_agent_signing_flow() {
 
     let signed_tx = agent(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Agent integration test with TradingKey + VC")
         .add_message(market_any)
         .with_trading_key_claim(trading_key_claim)
@@ -54,6 +55,7 @@ pub async fn test_agent_without_claim() {
 
     let signed_tx = agent(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg)
         .sign()
         .await
@@ -74,6 +76,7 @@ pub async fn test_agent_different_seeds_produce_different_signatures() {
 
     let tx1 = agent(signer1)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg())
         .sign()
         .await
@@ -81,6 +84,7 @@ pub async fn test_agent_different_seeds_produce_different_signatures() {
 
     let tx2 = agent(signer2)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg())
         .sign()
         .await

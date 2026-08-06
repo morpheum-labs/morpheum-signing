@@ -17,6 +17,7 @@ pub async fn test_native_signing_flow() {
 
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Native integration test")
         .with_nonce_provider(nonce_provider)
         .add_message(market_any)
@@ -53,6 +54,7 @@ pub async fn test_native_default_nonce_fallback() {
     // No nonce provider → falls back to zero nonce
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg)
         .sign()
         .await
@@ -87,6 +89,7 @@ pub async fn test_native_multiple_messages() {
 
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .add_message(msg1)
         .add_message(msg2)
         .add_message(msg3)
@@ -111,6 +114,7 @@ pub async fn test_native_deterministic_signatures() {
 
     let tx1 = native(signer1)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .with_nonce_provider(nonce1)
         .add_message(msg())
         .sign()
@@ -119,6 +123,7 @@ pub async fn test_native_deterministic_signatures() {
 
     let tx2 = native(signer2)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .with_nonce_provider(nonce2)
         .add_message(msg())
         .sign()

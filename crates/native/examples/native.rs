@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Build and sign using the generic fluent API ──────────────────────
     let signed_tx = native(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Test market creation from native signer")
         .add_message(market_any)
         .sign()

@@ -91,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The claim is embedded in SignerInfo.signing_options and covered by the signature
     let signed_tx = agent(agent_signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Agent trade with verified claim")
         .add_message(market_any)
         .with_trading_key_claim(claim)

@@ -92,6 +92,18 @@ impl TxBuilderWasm {
         self
     }
 
+    /// Binds the target chain's genesis hash into the signing preimage
+    /// (Phase M3 — audit `O20` / `C12`). **Required before `sign()`.**
+    ///
+    /// Without it the signature authorises this transaction on any chain
+    /// sharing the same `chainId`, so `sign()` rejects an unbound preimage
+    /// rather than producing one silently.
+    #[wasm_bindgen(js_name = "withGenesisHash")]
+    pub fn with_genesis_hash(mut self, genesis_hash: Vec<u8>) -> TxBuilderWasm {
+        self.inner = self.inner.with_genesis_hash(genesis_hash);
+        self
+    }
+
     /// Sets an optional memo.
     #[wasm_bindgen]
     pub fn memo(mut self, memo: String) -> TxBuilderWasm {

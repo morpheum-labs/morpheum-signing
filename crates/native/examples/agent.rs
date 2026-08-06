@@ -51,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //    The claim is automatically embedded in SignerInfo.signing_options
     let signed_tx = agent(signer)
         .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
         .memo("Test market creation from AI agent with TradingKey + VC")
         .add_message(market_any)
         .with_trading_key_claim(trading_key_claim)
