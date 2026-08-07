@@ -1,0 +1,17 @@
+{
+  "_comment": "Tier B — public libraries (morpheum-sdk, morpheum-sdk-ts, morpheum-cli, mwvm, morpheum-signing). This file is public content: generic OSS secret hygiene only. Keychain denies matter most in morpheum-cli (keys live in the OS keyring).",
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.*.local)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/.cargo/credentials.toml)",
+      "Read(**/.netrc)",
+      "Bash(security find-generic-password*)",
+      "Bash(security find-internet-password*)",
+      "Bash(security export*)"
+    ]
+  }
+}
