@@ -209,158 +209,120 @@ impl TxBuilderWasm {
 
 // ==================== STATIC SIGN-DOC BUILDER (signer-less) ====================
 
-/// Constructs canonical SignDoc bytes without requiring a connected wallet.
+/// JS-facing shape of a signer-less SignDoc build.
 ///
-/// This is the signer-less counterpart to `TxBuilder::sign()` — it builds the
-/// exact same `TxBody`, `AuthInfo`, and `SignDoc` protobuf structures but returns
-/// the raw encoded bytes + SHA-256 hash instead of signing them.
+/// Mirrors the `SignDocRequest` interface declared in `lib.rs`. Field names are
+/// camelCase to match the `SignDocBytes` result this call returns; the
+/// snake_case `TradingKeyClaimInput` predates that and is left alone rather
+/// than churned.
 ///
-/// Callable from both browser and Node.js (via `wasm-pack --target nodejs`).
-///
-/// The optional `genesis_hash` argument (Phase M3 — audit `O20` / `C12`)
-/// binds the SignDoc preimage to a specific chain instance so a valid
-/// signature cannot be replayed across forks that share a `chain_id`.
-/// Pass `undefined` / `null` for pre-fork signers; pass the raw 32-byte
-/// genesis block hash at/after `FORK_VERSION_STRICT_GENESIS_BINDING`
-/// activates.
-///
-/// `nonce` is **required**, and the encoding this bound is returned so the
-/// caller stamps that exact value onto `Tx.nonce`. It used to be a trailing
-/// `Option`, and every TypeScript caller omitted it: they signed a nonce-less
-/// preimage and then fabricated a fresh nonce at assembly time, shipping a
-/// replay-protection field that no signature covered. An observer could
-/// rewrite it and resubmit — the signature still verified, the dedup hash
-/// changed, and the transaction was admitted as a new one. Requiring it here
-/// and returning it makes signed-vs-sent divergence unrepresentable rather
-/// than merely discouraged.
-///
-/// Returns the `SignDocBytes` shape declared in `lib.rs`'s
-/// `typescript_custom_section` and named by this signature's
-/// `unchecked_return_type`. Described there rather than restated here, because
-/// that declaration is what consumers actually typecheck against.
-#[wasm_bindgen(js_name = "buildSignDocBytes", unchecked_return_type = "SignDocBytes")]
-pub fn build_sign_doc_bytes(
+/// `nonce` has no `#[serde(default)]`, so omitting it is an error rather than a
+/// silent empty value. That is the whole point: this crate's defining defect
+/// was a ten-argument call made with eight, where the trailing `genesisHash`
+/// and `nonce` defaulted away and every transaction shipped a nonce no
+/// signature covered. TypeScript callers cannot omit it at all — the parameter
+/// is typed as the interface, so a missing required field fails to compile —
+/// and a plain-JS caller now gets a named deserialization error instead of an
+/// unbound preimage.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignDocRequestJs {
     type_url: String,
     msg_bytes: Vec<u8>,
+    /// Hex-encoded, with or without the `0x` prefix. Decoded here because a
+    /// hex string is a boundary concern; `core` takes bytes.
     signer_address: String,
     chain_type: i32,
     sign_mode: i32,
     chain_id: String,
+    #[serde(default)]
     memo: Option<String>,
+    #[serde(default)]
     account_number: Option<u64>,
+    #[serde(default)]
     genesis_hash: Option<Vec<u8>>,
+    /// Proto-encoded `Nonce`. Taking the encoded bytes rather than the three
+    /// scalar fields is deliberate: the caller passes the very value it will
+    /// stamp onto `Tx.nonce`, so the signed preimage cannot drift from the
+    /// wire.
     nonce: Vec<u8>,
+}
+
+/// Constructs canonical SignDoc bytes without requiring a connected wallet.
+///
+/// The signer-less counterpart to `TxBuilder::sign`. Takes one named request
+/// object rather than ten positional parameters — a missing field is a
+/// TypeScript error, whereas a missing trailing argument was a security
+/// downgrade that shipped.
+///
+/// This function is only the JS boundary: it decodes the request, delegates the
+/// actual assembly to
+/// [`morpheum_signing_core::preimage::build_sign_doc`], and marshals the result
+/// back. The assembly lives in `core` because this crate is
+/// `#![cfg(target_arch = "wasm32")]` and therefore invisible to every host test
+/// runner — preimage logic is the last thing that should be untestable. It is
+/// pinned there by a golden vector captured from this binding.
+///
+/// Returns the `SignDocBytes` shape declared in `lib.rs` and named by this
+/// signature's `unchecked_return_type`.
+#[wasm_bindgen(js_name = "buildSignDocBytes", unchecked_return_type = "SignDocBytes")]
+pub fn build_sign_doc_bytes(
+    #[wasm_bindgen(unchecked_param_type = "SignDocRequest")] request: JsValue,
 ) -> Result<JsValue, JsValue> {
-    use crate::core::proto::tx::v1::{self as tx, AuthInfo, ModeInfo, SignerInfo, TxBody};
+    let request: SignDocRequestJs = serde_wasm_bindgen::from_value(request)
+        .map_err(|e| JsValue::from_str(&format!("invalid SignDocRequest: {e}")))?;
 
-    let addr_hex = signer_address.strip_prefix("0x").unwrap_or(&signer_address);
-    let key_bytes = hex::decode(addr_hex)
-        .map_err(|e| JsValue::from_str(&format!("invalid signer_address hex: {e}")))?;
+    let addr_hex = request
+        .signer_address
+        .strip_prefix("0x")
+        .unwrap_or(&request.signer_address);
+    let signer_key = hex::decode(addr_hex)
+        .map_err(|e| JsValue::from_str(&format!("invalid signerAddress hex: {e}")))?;
 
-    // Chain type 1 = Ethereum (secp256k1), otherwise Ed25519
-    let key_type_url = if chain_type == 1 {
-        "/cosmos.crypto.secp256k1.PubKey"
-    } else {
-        "/cosmos.crypto.ed25519.PubKey"
-    };
-
-    // Every field is written out explicitly, and deliberately without
-    // `..Default::default()`. This struct is a *signing preimage*: whatever it
-    // encodes to is what the signature covers, so the caller must send a
-    // `TxBody` that encodes identically or verification fails. A spread would
-    // let a newly added proto field default silently on this side while the
-    // wire carried something else — a signature over one transaction attached
-    // to another. Failing to compile when the proto grows is the safer
-    // outcome: it forces the value to be chosen rather than assumed. (That is
-    // exactly what happened with `tx_class` and `urgent`, which is why this
-    // crate stopped building.)
-    let body = TxBody {
-        messages: vec![crate::core::Any {
-            type_url,
-            value: msg_bytes,
-        }],
-        memo: memo.unwrap_or_default(),
-        timeout_timestamp: None,
-        priority_tip: String::new(),
-        tx_class: crate::core::tx_class::TxClass::Standard.to_wire(),
-        urgent: false,
-    };
-
-    let signer_info = SignerInfo {
-        public_key: Some(crate::core::Any {
-            type_url: key_type_url.into(),
-            value: key_bytes,
-        }),
-        mode_info: Some(ModeInfo {
-            sum: Some(tx::mode_info::Sum::Single(tx::mode_info::Single {
-                mode: sign_mode,
-            })),
-        }),
-        chain_type,
-        ..Default::default()
-    };
-
-    let auth_info = AuthInfo {
-        signer_infos: vec![signer_info],
-        gas_limit: 0,
-    };
-
-    let body_bytes = body.encode_to_vec();
-    let auth_info_bytes = auth_info.encode_to_vec();
-
-    // Assembled through the preimage SSOT in `morpheum-primitives` so browser
-    // and native signers produce byte-identical preimages.
-    // `nonce` is the proto-encoded `Nonce` the caller will stamp onto
-    // `Tx.nonce`. Taking the encoded bytes rather than the three scalar fields
-    // is deliberate: the caller passes the very value it stamps, so the signed
-    // preimage cannot drift from what ends up on the wire — which is precisely
-    // the gap `FORK_VERSION_STRICT_NONCE_BINDING` exists to close. Omitting it
-    // yields a pre-binding signature, valid only while that fork is advisory.
-    let nonce = tx::Nonce::decode(nonce.as_slice())
+    let nonce = crate::core::proto::tx::v1::Nonce::decode(request.nonce.as_slice())
         .map_err(|e| JsValue::from_str(&format!("invalid nonce encoding: {e}")))?;
 
-    let sign_doc_bytes = crate::core::sign_doc_signing_bytes(
-        body_bytes.clone(),
-        auth_info_bytes.clone(),
-        &chain_id,
-        account_number.unwrap_or(0),
-        genesis_hash.unwrap_or_default(),
-        Some(nonce),
-    );
-
-    let hash_hex = hex::encode(sha2::Sha256::digest(&sign_doc_bytes));
+    let parts = crate::core::preimage::build_sign_doc(&crate::core::preimage::SignDocRequest {
+        type_url: request.type_url,
+        msg_bytes: request.msg_bytes,
+        signer_key,
+        chain_type: request.chain_type,
+        sign_mode: request.sign_mode,
+        chain_id: request.chain_id,
+        memo: request.memo,
+        account_number: request.account_number.unwrap_or(0),
+        genesis_hash: request.genesis_hash,
+        nonce,
+    });
 
     let obj = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &obj,
-        &"signDocBytes".into(),
-        &js_sys::Uint8Array::from(sign_doc_bytes.as_slice()).into(),
-    )
-    .map_err(|_| JsValue::from_str("failed to set signDocBytes"))?;
-    js_sys::Reflect::set(&obj, &"signDocHash".into(), &JsValue::from_str(&hash_hex))
-        .map_err(|_| JsValue::from_str("failed to set signDocHash"))?;
-    js_sys::Reflect::set(
-        &obj,
-        &"bodyBytes".into(),
-        &js_sys::Uint8Array::from(body_bytes.as_slice()).into(),
-    )
-    .map_err(|_| JsValue::from_str("failed to set bodyBytes"))?;
-    js_sys::Reflect::set(
-        &obj,
-        &"authInfoBytes".into(),
-        &js_sys::Uint8Array::from(auth_info_bytes.as_slice()).into(),
-    )
-    .map_err(|_| JsValue::from_str("failed to set authInfoBytes"))?;
-    // Re-encoded from the decoded value that was actually bound, so the caller
-    // stamps the signed nonce onto the wire rather than a look-alike it built
-    // separately. Returning it is what makes the two impossible to diverge:
-    // assembly has no other nonce to reach for.
-    js_sys::Reflect::set(
-        &obj,
-        &"nonce".into(),
-        &js_sys::Uint8Array::from(nonce.encode_to_vec().as_slice()).into(),
-    )
-    .map_err(|_| JsValue::from_str("failed to set nonce"))?;
+    let set = |key: &str, value: JsValue| -> Result<(), JsValue> {
+        js_sys::Reflect::set(&obj, &key.into(), &value)
+            .map_err(|_| JsValue::from_str(&format!("failed to set {key}")))
+            .map(|_| ())
+    };
+    set(
+        "signDocBytes",
+        js_sys::Uint8Array::from(parts.sign_doc_bytes.as_slice()).into(),
+    )?;
+    set(
+        "signDocHash",
+        JsValue::from_str(&hex::encode(parts.sign_doc_hash)),
+    )?;
+    set(
+        "bodyBytes",
+        js_sys::Uint8Array::from(parts.body_bytes.as_slice()).into(),
+    )?;
+    set(
+        "authInfoBytes",
+        js_sys::Uint8Array::from(parts.auth_info_bytes.as_slice()).into(),
+    )?;
+    // Re-encoded from the nonce that was actually bound, so the caller stamps
+    // the signed value rather than a look-alike it built separately.
+    set(
+        "nonce",
+        js_sys::Uint8Array::from(parts.nonce_bytes.as_slice()).into(),
+    )?;
 
     Ok(obj.into())
 }

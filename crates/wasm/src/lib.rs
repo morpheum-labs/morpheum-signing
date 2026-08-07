@@ -80,6 +80,52 @@ const TS_TYPES: &str = r#"
  */
 
 /**
+ * Everything `buildSignDocBytes` binds into a signing preimage.
+ *
+ * One named object rather than ten positional parameters. This crate's
+ * defining defect was a ten-argument call made with eight: the trailing
+ * `genesisHash` and `nonce` defaulted away, so every transaction shipped a
+ * replay-protection field no signature covered, rewritable by any observer. A
+ * missing field here is a TypeScript error; a missing trailing argument was a
+ * security downgrade that compiled.
+ *
+ * `nonce` is required for exactly that reason. `memo`, `accountNumber` and
+ * `genesisHash` are optional because absent and default are genuinely the same
+ * statement for those three — an absent `genesisHash` is the pre-fork unbound
+ * posture, which verifiers still accept while the binding is advisory.
+ */
+export interface SignDocRequest {
+    /** Protobuf type URL (e.g. "/bucket.v1.MsgCreateBucketRequest"). */
+    typeUrl: string;
+    /** Pre-encoded protobuf message bytes. */
+    msgBytes: Uint8Array;
+    /** Hex-encoded signer key — 20-byte EVM address or 32-byte Ed25519 key. */
+    signerAddress: string;
+    /** `ChainType` enum value (1 = Ethereum, 2 = Solana, 3 = Bitcoin). */
+    chainType: number;
+    /** `SignMode` enum value. */
+    signMode: number;
+    /** Chain identifier (e.g. "morm-dev-1"). */
+    chainId: string;
+    /** Optional transaction memo. */
+    memo?: string;
+    /** Optional account number; defaults to 0. */
+    accountNumber?: bigint;
+    /**
+     * The target chain's 32-byte genesis hash (Phase M3), which stops a
+     * signature valid on one chain being replayed onto another sharing its
+     * `chainId`. Optional while the strict genesis fork is advisory.
+     */
+    genesisHash?: Uint8Array;
+    /**
+     * Proto-encoded `Nonce` to bind. **Required.** Whatever is passed here is
+     * returned in {@link SignDocBytes.nonce} and is the only value that will
+     * verify, because it is the one the signature covers.
+     */
+    nonce: Uint8Array;
+}
+
+/**
  * The canonical SignDoc bundle returned by `buildSignDocBytes`.
  *
  * `nonce` is the encoding the preimage actually bound, and it is on this

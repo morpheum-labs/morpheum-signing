@@ -97,15 +97,23 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo test
         run: cargo test --workspace --all-features
-      - name: cargo check (wasm32 — the target crates/wasm actually ships to)
+      - name: cargo clippy (wasm32 — the target crates/wasm actually ships to)
         # Every step above builds for the host, and `crates/wasm/src/lib.rs`
         # carries `#![cfg(target_arch = "wasm32")]`. On the host it is an EMPTY
         # crate: a green workspace run says nothing whatsoever about the code
         # `wasm-pack` publishes, and an arity break in `build_sign_doc_bytes`
         # has already reached `main` through exactly that blind spot.
         #
-        # Default features on purpose — that is what `wasm-pack build` uses, so
-        # this gates the shipped configuration. `--all-features` would add
-        # `cryptogram`, whose transitive `mio` does not build for wasm32 at all,
-        # gating a configuration nobody can ship.
-        run: cargo check --target wasm32-unknown-unknown -p morpheum-signing-wasm
+        # `clippy` rather than `check`, at the same `-D warnings` strictness as
+        # the host step. This was `check` only because `build_sign_doc_bytes`
+        # tripped `too_many_arguments` at 10/7 and silencing it with an
+        # `#[allow]` to make a gate pass is not a fix. The remedy landed
+        # instead — one named request object — so the lint is satisfied on its
+        # merits and the weaker gate is no longer needed.
+        #
+        # `--lib` and default features on purpose: that is exactly what
+        # `wasm-pack build` compiles. `--all-targets` pulls dev-dependencies
+        # whose transitive `mio` does not build for wasm32, and `--all-features`
+        # adds `cryptogram` with the same problem — both would gate a
+        # configuration nobody can ship.
+        run: cargo clippy --target wasm32-unknown-unknown -p morpheum-signing-wasm --lib -- -D warnings
