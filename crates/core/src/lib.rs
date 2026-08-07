@@ -21,6 +21,9 @@ pub mod claim;
 pub mod error;
 pub mod mapper;
 pub mod nonce;
+/// Signer-less signing-preimage assembly — see the module docs for why it
+/// lives here rather than in the wasm crate.
+pub mod preimage;
 pub mod signer;
 pub mod types;
 pub mod wallet_adapter;
