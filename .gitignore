@@ -2,3 +2,7 @@
 /target
 /flattened_code.md
 /flatten_code.sh
+
+# Claude Code — local-only, never committed
+CLAUDE.local.md
+.claude/settings.local.json
