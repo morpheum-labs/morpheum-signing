@@ -338,6 +338,25 @@ impl<S: Signer> TxBuilder<S> {
             ));
         }
 
+        // 0b. Refuse to build a preimage that binds no chain.
+        //
+        // An unset genesis hash does not fail — it produces a signature
+        // verifiers still accept, on the weaker `GenesisUnbound` rung. So
+        // forgetting it is a silent downgrade to a signature replayable onto
+        // any chain sharing this `chain_id`, which is precisely what
+        // `FORK_VERSION_STRICT_GENESIS_BINDING` exists to end. Fail closed
+        // instead: a signature that binds nothing is not produced at all.
+        //
+        // ORDER IS LOAD-BEARING. This runs BEFORE the nonce is resolved. The
+        // provider path (`Sentry` / `AgentPortal`) hands out a monotonic value
+        // and does not take it back, so rejecting after that point would burn a
+        // nonce on a transaction that never exists — leaving a gap the account's
+        // monotonic sequence cannot skip past. A misconfigured caller should
+        // lose nothing but the call.
+        if self.genesis_hash.is_empty() {
+            return Err(SigningError::GenesisHashUnset);
+        }
+
         // 1. Resolve nonce: manual > provider > default fallback
         let nonce = if let Some(nonce) = self.manual_nonce {
             nonce
@@ -520,9 +539,12 @@ mod tests {
 
     use super::*;
     use crate::proto::tx::v1::{SignDoc, Tx as ProtoTx};
+    use crate::types::AccountId;
     use crate::types::{PublicKey, Signature, WalletType};
     use async_trait::async_trait;
     use morpheum_primitives::priority_fee::{parse_tip_oneirs, MIN_TIP_ONEIRS};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     /// Hermetic test signer — emits a deterministic stub Ed25519 signature
     /// without invoking any crypto backend. The Pin A contract targets the
@@ -560,6 +582,78 @@ mod tests {
     /// `sign` refuses an unbound preimage, so every signing test must supply
     /// one; the value is irrelevant to these assertions, only its presence.
     const TEST_GENESIS_HASH: [u8; 32] = [0x5A; 32];
+
+    /// A nonce provider that records whether it was ever consulted.
+    ///
+    /// Exists to prove the ordering in `sign()` step 0b, which no assertion on
+    /// the returned error could establish: both orderings return the same
+    /// `GenesisHashUnset`, and only the side effect distinguishes them.
+    struct CountingNonceProvider {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl crate::nonce::NonceProvider for CountingNonceProvider {
+        async fn next_nonce(&self, _account_id: &AccountId) -> Result<Nonce, SigningError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Nonce {
+                monotonic: 1,
+                ts_ms: 0,
+                sub: 0,
+            })
+        }
+    }
+
+    /// A preimage that binds no chain is not produced at all.
+    ///
+    /// The failure mode this closes is not a crash — it is silence. An unset
+    /// genesis hash still yields a valid signature, accepted on the weaker
+    /// `GenesisUnbound` rung, and replayable onto any chain sharing this
+    /// `chain_id`. Nothing about the returned `SignedTx` would have looked
+    /// wrong.
+    #[tokio::test]
+    async fn sign_refuses_to_build_a_preimage_that_binds_no_chain() {
+        let err = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .add_message(stub_message())
+            .sign()
+            .await
+            .expect_err("an unbound preimage must not be signable");
+
+        assert!(
+            matches!(err, SigningError::GenesisHashUnset),
+            "expected GenesisHashUnset, got {err:?}"
+        );
+    }
+
+    /// The refusal happens BEFORE the nonce provider is consulted.
+    ///
+    /// Provider-backed nonces (`Sentry` / `AgentPortal`) are monotonic and are
+    /// not handed back. Rejecting after fetching one would burn it on a
+    /// transaction that never exists, leaving a gap the account's sequence
+    /// cannot skip — so a misconfigured caller would be penalised for the
+    /// misconfiguration on top of being told about it.
+    #[tokio::test]
+    async fn the_refusal_does_not_burn_a_monotonic_nonce() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let err = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .with_nonce_provider(CountingNonceProvider {
+                calls: Arc::clone(&calls),
+            })
+            .add_message(stub_message())
+            .sign()
+            .await
+            .expect_err("an unbound preimage must not be signable");
+
+        assert!(matches!(err, SigningError::GenesisHashUnset));
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "the nonce provider must not be consulted for a build that cannot succeed",
+        );
+    }
 
     /// Pin A — proto round-trip determinism for the four-value boundary
     /// table `tip_oneirs ∈ {0, 1, MIN_TIP_ONEIRS, u128::MAX}`.

@@ -43,6 +43,26 @@ pub enum SigningError {
     #[error("protobuf decode error: {0}")]
     ProtoDecode(#[from] prost::DecodeError),
 
+    /// `sign()` was called without a target genesis hash.
+    ///
+    /// The signing preimage binds the chain's genesis hash so a signature valid
+    /// on one chain cannot be replayed onto another sharing its `chain_id`
+    /// (Phase M3 — audit `O20` / row `C12`). An unset hash produces a signature
+    /// that verifiers still accept, on the weaker `GenesisUnbound` rung — so
+    /// forgetting it is not a build failure, it is a silent downgrade to a
+    /// weaker security posture. This variant makes it loud instead.
+    ///
+    /// Fix it by configuring the hash, never by fetching one: a client that
+    /// asked its RPC endpoint and signed against the answer would let whoever
+    /// controls that endpoint choose which chain the signature authorises,
+    /// which is the exact cross-chain replay the binding prevents.
+    #[error(
+        "genesis hash not set: the signing preimage would not bind a chain, \
+         producing a signature replayable onto any chain sharing this chain_id. \
+         Set it with TxBuilder::with_genesis_hash from operator configuration"
+    )]
+    GenesisHashUnset,
+
     /// VC / `TradingKey` claim is structurally invalid or expired.
     #[error("invalid VC or TradingKey claim: {0}")]
     InvalidClaim(String),
