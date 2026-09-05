@@ -1,4 +1,4 @@
-<!-- morpheum-claude-framework v2026-08-07 — shared blocks synced by sync.sh; edit prose freely -->
+<!-- morpheum-workspace v2026-09-05 — shared blocks synced by sync.sh; edit prose freely -->
 # morpheum-signing
 
 Universal multi-chain signing SDK for the Morpheum L1: one fluent `TxBuilder` producing
