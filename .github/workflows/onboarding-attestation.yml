@@ -1,0 +1,40 @@
+# Deployed by morpheum-workspace scripts/sync.sh push — edit the canonical copy at
+# morpheum-workspace/templates/workflows/onboarding-attestation.yml, not this file.
+#
+# Every commit in a member PR must carry the Morpheum-Onboarding trailer, which the
+# workspace's prepare-commit-msg hook adds only on a machine that passes the onboarding
+# doctor. Fork PRs (outside contributors) and bot-authored PRs are exempt. The trailer is
+# an attestation, not a signature: forging it is a deliberate act, visible in history.
+name: onboarding-attestation
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  attest:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !endsWith(github.event.pull_request.user.login, '[bot]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: every non-merge commit carries Morpheum-Onboarding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq '
+            .[] | select((.parents | length) == 1)
+                | select(((.author.login // "") | endswith("[bot]")) | not)
+                | select(.commit.message | test("(?m)^Morpheum-Onboarding: [0-9a-f]{12}$") | not)
+                | "\(.sha[0:12])  \(.commit.author.name)  \(.commit.message | split("\n")[0])"' > missing.txt
+          total=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq '.[] | .sha' | wc -l)
+          if [ -s missing.txt ]; then
+            echo "::error::$(wc -l < missing.txt)/$total commits lack the Morpheum-Onboarding trailer (machine not onboarded):"
+            cat missing.txt
+            echo "Fix: run morpheum-workspace/tooling/onboarding/setup.sh, then re-stamp the branch:"
+            echo "     git rebase -x 'git commit --amend --no-edit' origin/${{ github.base_ref }} && git push --force-with-lease"
+            exit 1
+          fi
+          echo "all $total commits attested"
