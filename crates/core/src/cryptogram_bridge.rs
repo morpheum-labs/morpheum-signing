@@ -196,27 +196,30 @@ pub fn verify_digest(
 
 // ==================== SIGNATURE CONVERSION ====================
 
-/// Converts a hex-encoded signature string to the signing SDK's [`Signature`] type.
+/// Converts a signature produced by cryptogram's universal signer into the
+/// SDK's 64-byte [`Signature`].
 ///
-/// The `sig_type` determines which [`Signature`] variant is returned.
-/// Supports 64-byte signatures (Ed25519, Schnorr, ECDSA compact).
+/// The encoded form is parsed by cryptogram's canonical decoder
+/// (`decode_signature`), so wallet wire formats — Sui's `flag ‖ sig ‖ pubkey`
+/// (base64), TON's `sig ‖ pubkey` — are never re-implemented here; the
+/// embedded public key, if any, is dropped.
 ///
 /// # Errors
 ///
-/// Returns [`SigningError`] if the hex is malformed or the decoded length is not 64 bytes.
+/// Returns [`SigningError`] if the encoding is malformed or the scheme's raw
+/// signature is not 64 bytes (recoverable ECDSA, BLS and the hybrid ML-DSA
+/// scheme have no 64-byte SDK form).
 pub fn hex_sig_to_signature(
     sig_hex: &str,
     sig_type: mst::SigType,
 ) -> Result<Signature, SigningError> {
     use mst::SigType;
 
-    let hex_str = sig_hex.strip_prefix("0x").unwrap_or(sig_hex);
-    let bytes = hex::decode(hex_str)
-        .map_err(|e| SigningError::signing(format!("invalid hex signature: {e}")))?;
-
-    let arr: [u8; 64] = bytes
-        .try_into()
-        .map_err(|_| SigningError::signing("signature must be 64 bytes for SDK conversion"))?;
+    let decoded = cc::decode_signature(sig_type, sig_hex)
+        .map_err(|e| SigningError::signing(format!("invalid signature: {e}")))?;
+    let arr: [u8; 64] = decoded.signature.try_into().map_err(|_| {
+        SigningError::signing("signature has no 64-byte SDK form for this signature type")
+    })?;
 
     match sig_type {
         SigType::Ed25519
@@ -287,5 +290,44 @@ impl From<ms::auth::AuthError> for SigningError {
 impl From<ms::tx::TxError> for SigningError {
     fn from(e: ms::tx::TxError) -> Self {
         SigningError::signing(e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cryptogram emits wallet wire formats that embed the public key (Sui's
+    /// base64 `flag ‖ sig ‖ pk`, TON's `sig ‖ pk`); the SDK form is the bare
+    /// 64-byte signature.
+    #[test]
+    fn wallet_formats_convert_to_the_bare_signature() {
+        let digest = [0x5au8; 32];
+        let secret = [0x2au8; 32];
+        for sig_type in [
+            mst::SigType::Ed25519,
+            mst::SigType::Ed25519LegacySui,
+            mst::SigType::Ed25519LegacyTon,
+            mst::SigType::EcdsaLegacySui,
+        ] {
+            let (encoded, _) = cc::generate_single_from_digest(&digest, sig_type, &secret, &[])
+                .unwrap_or_else(|e| panic!("{sig_type:?}: {e}"));
+            let expected = cc::decode_signature(sig_type, &encoded).unwrap().signature;
+            let sdk = hex_sig_to_signature(&encoded, sig_type)
+                .unwrap_or_else(|e| panic!("{sig_type:?}: {e}"));
+            assert_eq!(sdk.to_bytes(), expected, "{sig_type:?}");
+        }
+    }
+
+    #[test]
+    fn recoverable_ecdsa_has_no_sdk_form() {
+        let (encoded, _) = cc::generate_single_from_digest(
+            &[1u8; 32],
+            mst::SigType::EcdsaLegacyEthereum,
+            &[7u8; 32],
+            &[0u8; 20],
+        )
+        .unwrap();
+        assert!(hex_sig_to_signature(&encoded, mst::SigType::EcdsaLegacyEthereum).is_err());
     }
 }

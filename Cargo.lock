@@ -718,6 +718,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
+ "sha2",
  "tinyvec",
 ]
 
@@ -1049,10 +1050,12 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "base64",
  "bech32",
  "blake2",
  "blst",
  "bs58",
+ "curve25519-dalek",
  "ed25519-dalek",
  "hex",
  "k256",
@@ -1066,6 +1069,7 @@ dependencies = [
  "sha3",
  "thiserror 2.0.18",
  "ton",
+ "zeroize",
 ]
 
 [[package]]
@@ -1102,10 +1106,12 @@ dependencies = [
  "blake2",
  "bs58",
  "crypto-bigint",
+ "ed25519-bip32",
  "ed25519-dalek",
  "hex",
  "hmac",
  "k256",
+ "pbkdf2",
  "ripemd",
  "schnorrkel",
  "sha2",
@@ -1113,6 +1119,12 @@ dependencies = [
  "thiserror 2.0.18",
  "zeroize",
 ]
+
+[[package]]
+name = "cryptoxide"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8bb2a43afb0fd8b53101f79f153795c449ba80762361d8b868f4a75c6d03057"
 
 [[package]]
 name = "ctr"
@@ -1359,6 +1371,15 @@ dependencies = [
  "pkcs8",
  "serde",
  "signature",
+]
+
+[[package]]
+name = "ed25519-bip32"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e52ba86da72b02c3456cbe0fdbb668869c819417781eabbfe811c6b2f124b0c"
+dependencies = [
+ "cryptoxide",
 ]
 
 [[package]]
@@ -1972,6 +1993,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "891d15931895091dea5c47afa5b3c9a01ba634b311919fd4d41388fa0e3d76af"
 dependencies = [
  "typenum",
+ "zeroize",
 ]
 
 [[package]]
@@ -2454,6 +2476,7 @@ dependencies = [
  "rand_core 0.6.4",
  "sha3",
  "signature",
+ "zeroize",
 ]
 
 [[package]]
@@ -2647,12 +2670,14 @@ dependencies = [
  "morpheum-common",
  "morpheum-standards-types",
  "rand 0.8.5",
+ "ripemd",
  "secp256k1 0.28.2",
  "serde",
  "serde_json",
  "sha2",
  "sha3",
  "thiserror 2.0.18",
+ "zeroize",
 ]
 
 [[package]]
@@ -2660,6 +2685,7 @@ name = "morpheum-standards-types"
 version = "1.4.4"
 dependencies = [
  "alloy-primitives",
+ "bs58",
  "once_cell",
  "serde",
  "serde_json",
