@@ -647,7 +647,6 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures",
- "rayon-core",
 ]
 
 [[package]]
@@ -1087,7 +1086,6 @@ dependencies = [
 name = "cryptogram-hd"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "cryptogram-crypto",
  "cryptogram-hd-core",
  "ed25519-dalek",
@@ -1108,12 +1106,12 @@ dependencies = [
  "hex",
  "hmac",
  "k256",
- "num-bigint",
  "ripemd",
  "schnorrkel",
  "sha2",
  "sha3",
  "thiserror 2.0.18",
+ "zeroize",
 ]
 
 [[package]]
@@ -3328,16 +3326,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.5",
-]
-
-[[package]]
-name = "rayon-core"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
-dependencies = [
- "crossbeam-deque",
- "crossbeam-utils",
 ]
 
 [[package]]
