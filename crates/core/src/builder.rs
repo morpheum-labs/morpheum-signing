@@ -21,6 +21,26 @@ use crate::{
     signer::Signer,
     types::{SignedTx, SigningOptions},
     wallet_adapter::{BoxedWalletAdapter, WalletAdapter},
+    TxGasLimit,
+};
+
+/// The gas limit a transaction declares when the caller sets none: 25,000.
+///
+/// Every transaction declares a gas limit in its signed `AuthInfo.gas_limit`,
+/// and `0` is not a declaration (see [`TxGasLimit`]). The declaration is a cap
+/// and a reservation at once: execution fails once the transaction uses more,
+/// and block assembly reserves every declared unit against the block's gas
+/// budget whether execution uses it or not. Declaring more than a transaction
+/// needs therefore costs block space and buys nothing, so a caller that knows
+/// a tighter bound should declare it with [`TxBuilder::gas_limit`].
+///
+/// The default fits native-module messages with a fixed cost. A message whose
+/// cost grows with the work it does, and a VM message (deploying or calling a
+/// contract), can need more; such a transaction must declare what it needs,
+/// up to [`TX_GAS_BUDGET`](crate::TX_GAS_BUDGET), or it fails for want of gas.
+pub const DEFAULT_GAS_LIMIT: TxGasLimit = match TxGasLimit::new(25_000) {
+    Ok(limit) => limit,
+    Err(_) => panic!("DEFAULT_GAS_LIMIT must be a valid gas-limit declaration"),
 };
 
 /// Fluent transaction builder (completely generic).
@@ -66,6 +86,10 @@ pub struct TxBuilder<S: Signer> {
     /// that omit the field land on the legacy MAV-routed semantics
     /// by construction.
     urgent: bool,
+    /// The gas limit stamped onto `AuthInfo.gas_limit`, which the signature
+    /// covers. [`DEFAULT_GAS_LIMIT`] until [`TxBuilder::gas_limit`] sets
+    /// another; the type admits no undeclared or over-budget value.
+    gas_limit: TxGasLimit,
     // Agent-specific context (optional, zero overhead for regular users).
     agent_did: Option<String>,
     verifiable_presentation: Option<Vec<u8>>,
@@ -80,6 +104,7 @@ impl<S: Signer + fmt::Debug> fmt::Debug for TxBuilder<S> {
             .field("account_number", &self.account_number)
             .field("memo", &self.memo)
             .field("timeout_timestamp", &self.timeout_timestamp)
+            .field("gas_limit", &self.gas_limit)
             .field("messages", &self.messages)
             .field("signing_options", &self.signing_options)
             .finish_non_exhaustive()
@@ -106,6 +131,7 @@ impl<S: Signer> TxBuilder<S> {
             priority_tip: 0,
             tx_class: morpheum_primitives::tx_class::TxClass::Standard,
             urgent: false,
+            gas_limit: DEFAULT_GAS_LIMIT,
             agent_did: None,
             verifiable_presentation: None,
             trading_key_address: None,
@@ -243,6 +269,21 @@ impl<S: Signer> TxBuilder<S> {
     #[must_use]
     pub const fn urgent(mut self, urgent: bool) -> Self {
         self.urgent = urgent;
+        self
+    }
+
+    /// Declares the transaction's gas limit, replacing [`DEFAULT_GAS_LIMIT`].
+    ///
+    /// The limit is signed, caps the gas the transaction may use, and is
+    /// reserved in full against the block's gas budget whether used or not:
+    /// declare what the transaction needs, not the most it could be allowed.
+    ///
+    /// It takes a [`TxGasLimit`] rather than a `u64` so that an undeclared
+    /// (`0`) or over-budget limit is refused by [`TxGasLimit::new`] before
+    /// anything is signed, rather than by the chain after submission.
+    #[must_use]
+    pub const fn gas_limit(mut self, gas_limit: TxGasLimit) -> Self {
+        self.gas_limit = gas_limit;
         self
     }
 
@@ -464,7 +505,7 @@ impl<S: Signer> TxBuilder<S> {
 
         let auth_info = AuthInfo {
             signer_infos: vec![signer_info],
-            gas_limit: 0,
+            gas_limit: self.gas_limit.get(),
         };
 
         // 4. Encode body + auth_info once (reused in SignDoc and TxRaw)
@@ -544,7 +585,7 @@ mod tests {
     use async_trait::async_trait;
     use morpheum_primitives::priority_fee::{parse_tip_oneirs, MIN_TIP_ONEIRS};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     /// Hermetic test signer — emits a deterministic stub Ed25519 signature
     /// without invoking any crypto backend. The Pin A contract targets the
@@ -653,6 +694,95 @@ mod tests {
             0,
             "the nonce provider must not be consulted for a build that cannot succeed",
         );
+    }
+
+    /// A signer that records the `SignDoc` it was handed — the exact bytes its
+    /// signature covers.
+    struct RecordingSigner {
+        signed: Arc<Mutex<Option<SignDoc>>>,
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Signer for RecordingSigner {
+        async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
+            *self.signed.lock().expect("recorder lock") = Some(sign_doc.clone());
+            Ok(Signature::Ed25519([0u8; 64]))
+        }
+
+        fn public_key(&self) -> PublicKey {
+            PublicKey::Ed25519([0u8; 32])
+        }
+
+        fn wallet_type(&self) -> WalletType {
+            WalletType::Native
+        }
+    }
+
+    /// Every transaction declares a gas limit: one built without a declaration
+    /// carries [`DEFAULT_GAS_LIMIT`], and the chain's own gas-validity
+    /// predicate accepts it.
+    #[tokio::test]
+    async fn sign_declares_the_default_gas_limit() {
+        let signed = TxBuilder::new(StubSigner)
+            .chain_id("morpheum-test-1")
+            .with_genesis_hash(TEST_GENESIS_HASH)
+            .add_message(stub_message())
+            .sign()
+            .await
+            .expect("StubSigner build+sign should succeed");
+
+        assert_eq!(
+            TxGasLimit::declared_by(signed.tx()),
+            Ok(DEFAULT_GAS_LIMIT),
+            "a transaction built without a gas limit must declare the default",
+        );
+    }
+
+    /// A declared gas limit is inside the bytes the signer signs, and those
+    /// are the bytes the transaction ships.
+    ///
+    /// The declaration is a signed field: a relayer that could raise or lower
+    /// it without invalidating the signature could change what the
+    /// transaction is allowed to consume and how much block space it
+    /// reserves. The value used is not the default, so the assertion cannot
+    /// pass by the builder ignoring the setter.
+    #[tokio::test]
+    async fn the_declared_gas_limit_is_covered_by_the_signature() {
+        let declared = TxGasLimit::MAX;
+        assert_ne!(declared, DEFAULT_GAS_LIMIT);
+
+        let recorded = Arc::new(Mutex::new(None));
+        let signed = TxBuilder::new(RecordingSigner {
+            signed: Arc::clone(&recorded),
+        })
+        .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
+        .add_message(stub_message())
+        .gas_limit(declared)
+        .sign()
+        .await
+        .expect("RecordingSigner build+sign should succeed");
+
+        let sign_doc = recorded
+            .lock()
+            .expect("recorder lock")
+            .take()
+            .expect("sign() must hand the signer a SignDoc");
+        let signed_auth_info = AuthInfo::decode(sign_doc.auth_info_bytes.as_slice())
+            .expect("the signed auth_info_bytes must decode");
+        assert_eq!(
+            signed_auth_info.gas_limit,
+            declared.get(),
+            "the signed preimage must carry the declared gas limit",
+        );
+
+        let tx_raw = signed.tx_raw().expect("sign() must produce a TxRaw");
+        assert_eq!(
+            tx_raw.auth_info_bytes, sign_doc.auth_info_bytes,
+            "the shipped auth_info_bytes must be the signed ones",
+        );
+        assert_eq!(TxGasLimit::declared_by(signed.tx()), Ok(declared));
     }
 
     /// Pin A — proto round-trip determinism for the four-value boundary

@@ -93,6 +93,23 @@ pub use morpheum_primitives::tx::{
 /// Prost Any re-export (used heavily in TxBody.messages).
 pub use crate::proto::Any;
 
+// ==================== GAS-LIMIT RULE ====================
+//
+// Every transaction declares a gas limit in its signed `AuthInfo.gas_limit`,
+// and a valid declaration lies in `1..=TX_GAS_BUDGET`. The rule is re-exported
+// from `morpheum-primitives` rather than restated, so downstream crates
+// (`morpheum-sdk-core`, the CLI) declare gas through the type and bound that
+// define validity, without taking a direct primitives dependency.
+
+/// A gas-limit declaration proven to lie in `1..=`[`TX_GAS_BUDGET`], and the
+/// reason a raw value is not one.
+pub use morpheum_primitives::tx::{GasLimitError, TxGasLimit};
+
+/// The largest gas limit a transaction may declare.
+pub use morpheum_primitives::constants::tx::TX_GAS_BUDGET;
+
+pub use builder::DEFAULT_GAS_LIMIT;
+
 // ==================== PUBLIC RE-EXPORTS ====================
 
 pub use error::SigningError;
@@ -121,6 +138,9 @@ pub mod prelude {
     };
 
     pub use super::Any;
+
+    // Gas-limit declaration (`TxBuilder::gas_limit` takes a `TxGasLimit`)
+    pub use super::{GasLimitError, TxGasLimit};
 
     // Traits
     pub use super::builder::TxBuilder;
