@@ -56,6 +56,7 @@ let signer = NativeSigner::from_seed(&[42u8; 32]);
 
 let signed_tx = native(signer)
     .chain_id("morpheum-test-1")
+    .with_genesis_hash(genesis_hash)  // from operator configuration
     .memo("Test market from native signer")
     .add_message(market_any)        // prost_types::Any — fully generic
     .sign()
@@ -74,6 +75,7 @@ let signer = NativeSigner::from_mnemonic(
 
 let signed_tx = native(signer)
     .chain_id("morpheum-1")
+    .with_genesis_hash(genesis_hash)  // from operator configuration
     .add_message(market_any)
     .sign()
     .await?;
@@ -97,6 +99,8 @@ let claim = VcClaimBuilder::new()
     .build(now_secs)?;
 
 let signed_tx = agent(signer)
+    .chain_id("morpheum-1")
+    .with_genesis_hash(genesis_hash)  // from operator configuration
     .with_trading_key_claim(claim)
     .add_message(market_any)
     .sign()
@@ -112,6 +116,8 @@ claim.verify(now_secs, &issuer_pubkey)?;
 // The claim is embedded in SignerInfo.signing_options
 // and covered by the transaction signature.
 let signed_tx = agent(signer)
+    .chain_id("morpheum-1")
+    .with_genesis_hash(genesis_hash)  // from operator configuration
     .with_trading_key_claim(claim)
     .add_message(market_any)
     .sign()
@@ -124,6 +130,7 @@ let signed_tx = agent(signer)
 let signer = EvmSigner::from_seed(&[42u8; 32]);
 let signed_tx = evm(signer)
     .chain_id("morpheum-1")
+    .with_genesis_hash(genesis_hash)  // from operator configuration
     .add_message(market_any)
     .sign()
     .await?;
@@ -132,34 +139,37 @@ let signed_tx = evm(signer)
 ### Browser (MetaMask)
 
 ```ts
-import { TxBuilderWasm, set_panic_hook } from '@morpheum/signing';
+import { TxBuilderWasm, setPanicHook } from '@morpheum/signing';
 
-set_panic_hook();
+setPanicHook();
 
-const signedTx = await TxBuilderWasm.newMetamask()
-    .chain_id("morpheum-test-1")
+const signedTx = await (await TxBuilderWasm.newMetamask())
+    .chainId("morpheum-test-1")
+    .withGenesisHash(genesisHash)  // from operator configuration
     .memo("Market from MetaMask")
-    .add_message("type.googleapis.com/market.v1.MsgCreateMarketRequest", marketMsg)
+    .addMessage("type.googleapis.com/market.v1.MsgCreateMarketRequest", marketMsg)
     .sign();
 ```
 
 ### Browser (Phantom)
 
 ```ts
-const signedTx = await TxBuilderWasm.newPhantom()
-    .chain_id("morpheum-test-1")
+const signedTx = await (await TxBuilderWasm.newPhantom())
+    .chainId("morpheum-test-1")
+    .withGenesisHash(genesisHash)  // from operator configuration
     .memo("Market from Phantom")
-    .add_message("type.googleapis.com/market.v1.MsgCreateMarketRequest", marketMsg)
+    .addMessage("type.googleapis.com/market.v1.MsgCreateMarketRequest", marketMsg)
     .sign();
 ```
 
 ### Browser (Taproot)
 
 ```ts
-const signedTx = await TxBuilderWasm.newTaproot()
-    .chain_id("morpheum-test-1")
+const signedTx = await (await TxBuilderWasm.newTaproot())
+    .chainId("morpheum-test-1")
+    .withGenesisHash(genesisHash)  // from operator configuration
     .memo("Market from Taproot")
-    .add_message("type.googleapis.com/market.v1.MsgCreateMarketRequest", marketMsg)
+    .addMessage("type.googleapis.com/market.v1.MsgCreateMarketRequest", marketMsg)
     .sign();
 ```
 

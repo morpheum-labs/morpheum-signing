@@ -20,6 +20,7 @@
 //! let adapter = MetaMaskAdapter::new();
 //! let tx = TxBuilder::new(adapter) // or with_wallet_adapter(adapter)
 //!     .chain_id("morpheum-test-1")
+//!     .with_genesis_hash(genesis_hash) // from operator configuration
 //!     .add_message(...)
 //!     .sign()
 //!     .await?;
