@@ -165,6 +165,39 @@ const signedTx = await TxBuilderWasm.newTaproot()
 
 ---
 
+## Gas limit
+
+Every transaction declares a gas limit in its signed `AuthInfo.gas_limit`. The limit is a
+cap and a reservation at once: execution fails once the transaction uses more, and every
+declared unit is reserved against the block's gas budget whether it is used or not. Declare
+what the transaction needs, not the most it could be allowed.
+
+- Without a declaration, `TxBuilder` signs `DEFAULT_GAS_LIMIT` (25,000), which fits
+  native-module messages with a fixed cost.
+- A VM message (deploying or calling a contract), or a message whose cost grows with the
+  work it does, can need more and must then declare it, up to `TX_GAS_BUDGET`.
+- A declaration is a `TxGasLimit`. `TxGasLimit::new` refuses `0` and anything above
+  `TX_GAS_BUDGET`, so an invalid limit is caught before anything is signed.
+
+```rust
+use morpheum_signing_native::prelude::*;
+
+let signed_tx = native(signer)
+    .chain_id("morpheum-1")
+    .with_genesis_hash(genesis_hash) // from operator configuration
+    .add_message(contract_call_any)
+    .gas_limit(TxGasLimit::new(needed_gas)?)
+    .sign()
+    .await?;
+```
+
+In TypeScript, `TxBuilderWasm.gasLimit(bigint)` sets the declaration and throws on an
+invalid one. `buildSignDocBytes` takes an optional `gasLimit: bigint`; leaving it out
+declares the default. In Rust, `preimage::SignDocRequest::gas_limit` is required: pass
+`DEFAULT_GAS_LIMIT` to declare the default.
+
+---
+
 ## Examples
 
 | Example | Location | Description |

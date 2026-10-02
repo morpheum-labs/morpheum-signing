@@ -22,6 +22,7 @@ use crate::core::{
     builder::TxBuilder as CoreTxBuilder,
     claim::{TradingKeyClaim, VcClaimBuilder},
     prelude::*,
+    DEFAULT_GAS_LIMIT,
 };
 
 // ==================== MAIN TX BUILDER FOR BROWSER ====================
@@ -129,6 +130,21 @@ impl TxBuilderWasm {
         self
     }
 
+    /// Declares the transaction's gas limit, replacing the default
+    /// (`DEFAULT_GAS_LIMIT`, sized for native-module messages with a fixed
+    /// cost).
+    ///
+    /// The limit is signed and reserved in full against the block's gas
+    /// budget, so declare what the transaction needs. `0` or a value above
+    /// the per-transaction budget is refused here, before anything is signed.
+    #[wasm_bindgen(js_name = "gasLimit")]
+    pub fn gas_limit(mut self, gas_limit: u64) -> Result<TxBuilderWasm, JsValue> {
+        let gas_limit = TxGasLimit::new(gas_limit)
+            .map_err(|e| JsValue::from_str(&format!("invalid gasLimit: {e}")))?;
+        self.inner = self.inner.gas_limit(gas_limit);
+        Ok(self)
+    }
+
     /// **Generic message adder** — the only way to add messages.
     /// Pass the protobuf type URL and encoded bytes as a `Uint8Array`.
     #[wasm_bindgen(js_name = "addMessage")]
@@ -224,6 +240,11 @@ impl TxBuilderWasm {
 /// is typed as the interface, so a missing required field fails to compile —
 /// and a plain-JS caller now gets a named deserialization error instead of an
 /// unbound preimage.
+///
+/// `gas_limit` is optional for the opposite reason: every transaction declares
+/// one, and an absent or `null` `gasLimit` selects [`DEFAULT_GAS_LIMIT`],
+/// itself a valid declaration. A supplied number is never replaced — `0` or an
+/// over-budget value is an error, not a fallback to the default.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SignDocRequestJs {
@@ -246,6 +267,10 @@ struct SignDocRequestJs {
     /// stamp onto `Tx.nonce`, so the signed preimage cannot drift from the
     /// wire.
     nonce: Vec<u8>,
+    /// Raw declaration, validated into a `TxGasLimit` at the call site;
+    /// `None` (absent or `null`) selects the default.
+    #[serde(default)]
+    gas_limit: Option<u64>,
 }
 
 /// Constructs canonical SignDoc bytes without requiring a connected wallet.
@@ -282,6 +307,13 @@ pub fn build_sign_doc_bytes(
     let nonce = crate::core::proto::tx::v1::Nonce::decode(request.nonce.as_slice())
         .map_err(|e| JsValue::from_str(&format!("invalid nonce encoding: {e}")))?;
 
+    let gas_limit = request
+        .gas_limit
+        .map(TxGasLimit::new)
+        .transpose()
+        .map_err(|e| JsValue::from_str(&format!("invalid gasLimit: {e}")))?
+        .unwrap_or(DEFAULT_GAS_LIMIT);
+
     let parts = crate::core::preimage::build_sign_doc(&crate::core::preimage::SignDocRequest {
         type_url: request.type_url,
         msg_bytes: request.msg_bytes,
@@ -293,6 +325,7 @@ pub fn build_sign_doc_bytes(
         account_number: request.account_number.unwrap_or(0),
         genesis_hash: request.genesis_hash,
         nonce,
+        gas_limit,
     });
 
     let obj = js_sys::Object::new();

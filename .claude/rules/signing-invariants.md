@@ -7,9 +7,14 @@ Byte-level rules; a violation here changes what a signature covers.
 - Guard order in `TxBuilder::sign()` is load-bearing: fail-closed checks run **before**
   nonce resolution so a refusal never consumes a monotonic provider nonce. The ordering is
   observable only through the counting-provider test — do not weaken it.
-- Golden-vector constants: single unbroken literals, captured from the shipped package.
-  Changing them is changing the signature format — that is an ecosystem event, not a
-  refactor.
+- Golden-vector constants: single unbroken literals, never produced by the code under test.
+  The shipped package's capture stays verbatim; a field that package did not sign is
+  appended from the protobuf encoding rules, and the SignDoc hash comes from two
+  independent encoders (`protoc --encode` and a hand-written one) that agree and that each
+  reproduce the shipped hash from the shipped capture. Changing them is changing the
+  signature format — that is an ecosystem event, not a refactor.
+- `AuthInfo.gas_limit` is always a `TxGasLimit` declaration (`DEFAULT_GAS_LIMIT` unless the
+  caller sets one); never sign a raw `u64`, and never `0`.
 - `crates/wasm`: interfaces only in `typescript_custom_section`; never declare a symbol
   wasm-bindgen generates; keep `nonce` required-and-returned. Any change here requires
   `wasm-pack build crates/wasm --target nodejs --out-dir pkg-node` plus a typecheck of the
