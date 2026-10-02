@@ -18,9 +18,6 @@
 //!   and EIP-191 ecrecover — single source of truth for low-level curve crypto.
 //!   Only `verify_eip191_personal` (full-key EIP-191, SDK/agent path) is local.
 
-use alloc::string::String;
-use alloc::vec::Vec;
-
 use morpheum_primitives::tx::TxVerifyContext;
 use prost::Message;
 
@@ -146,7 +143,7 @@ pub fn verify_signed_tx(
     let signatures = &tx.signatures;
 
     if signer_infos.len() != signatures.len() {
-        return Err(SigningError::signing(alloc::format!(
+        return Err(SigningError::signing(format!(
             "signer_infos count ({}) != signatures count ({})",
             signer_infos.len(),
             signatures.len(),
@@ -178,7 +175,7 @@ pub fn verify_signed_tx(
         signed_tx.tx.nonce,
         ctx,
     )
-    .map_err(|e| SigningError::signing(alloc::format!("{e}")))?;
+    .map_err(|e| SigningError::signing(format!("{e}")))?;
 
     // ── Verify each signer ──
     let mut account_ids = Vec::with_capacity(signer_infos.len());
@@ -188,9 +185,10 @@ pub fn verify_signed_tx(
 
     for (i, si) in signer_infos.iter().enumerate() {
         // 1. Parse public key from proto Any
-        let pk_any = si.public_key.as_ref().ok_or_else(|| {
-            SigningError::signing(alloc::format!("signer_info[{i}] missing public_key"))
-        })?;
+        let pk_any = si
+            .public_key
+            .as_ref()
+            .ok_or_else(|| SigningError::signing(format!("signer_info[{i}] missing public_key")))?;
         let pubkey = PublicKey::from_proto_any(pk_any)?;
 
         // 2. Determine sign mode from mode_info
@@ -214,7 +212,7 @@ pub fn verify_signed_tx(
             // Report against the strictest preimage — the one a correctly
             // built signer was expected to produce.
             return Err(strictest_err.unwrap_or_else(|| {
-                SigningError::signing(alloc::format!(
+                SigningError::signing(format!(
                     "signer_info[{i}] verified under no accepted preimage"
                 ))
             }));
@@ -227,11 +225,7 @@ pub fn verify_signed_tx(
         if let Some(opts) = &si.signing_options {
             if let Some(claim) = TradingKeyClaim::decode_from_signing_options(opts)? {
                 // Structural + issuer verification (expiry + issuer-pubkey match)
-                #[cfg(feature = "claim-verification")]
                 claim.verify(now, &pubkey)?;
-
-                #[cfg(not(feature = "claim-verification"))]
-                claim.validate(now)?;
 
                 trading_key_claim = Some(claim);
             }
@@ -356,7 +350,7 @@ fn verify_ed25519(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::verify_ed25519_bytes(key_bytes, message, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(alloc::format!("{e}"))))
+        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(format!("{e}"))))
 }
 
 /// Secp256k1 ECDSA signature verification — delegates to `morpheum_primitives::crypto`.
@@ -371,7 +365,7 @@ fn verify_secp256k1(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::verify_secp256k1_bytes(key_bytes, message, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(format!("{e}"))))
 }
 
 /// secp256k1 ECDSA over a Keccak-256 digest (`SignMode::Keccak256`).
@@ -386,7 +380,7 @@ fn verify_secp256k1_keccak(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::verify_secp256k1_keccak_bytes(key_bytes, message, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(format!("{e}"))))
 }
 
 /// EIP-191 `personal_sign` verification using `k256` + `sha3` (Keccak-256).
@@ -412,7 +406,7 @@ fn verify_eip191_personal(
     // 1. Reconstruct the EIP-191 personal_sign hash.
     //    This matches what MetaMask computes internally:
     //    keccak256("\x19Ethereum Signed Message:\n" + decimal_len(msg) + msg)
-    let prefix = alloc::format!("\x19Ethereum Signed Message:\n{}", sign_doc_bytes.len());
+    let prefix = format!("\x19Ethereum Signed Message:\n{}", sign_doc_bytes.len());
     let hash: [u8; 32] = {
         let mut keccak = Keccak256::new();
         keccak.update(prefix.as_bytes());
@@ -422,7 +416,7 @@ fn verify_eip191_personal(
 
     // 2. Parse the compressed secp256k1 public key (33 bytes).
     let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes).map_err(|e| {
-        SigningError::Crypto(CryptoError::Secp256k1(alloc::format!(
+        SigningError::Crypto(CryptoError::Secp256k1(format!(
             "invalid secp256k1 public key: {e}"
         )))
     })?;
@@ -434,14 +428,14 @@ fn verify_eip191_personal(
         65 => &sig_bytes[..64],
         64 => sig_bytes,
         len => {
-            return Err(SigningError::Crypto(CryptoError::Secp256k1(
-                alloc::format!("EIP-191 signature must be 64 or 65 bytes, got {len}"),
-            )))
+            return Err(SigningError::Crypto(CryptoError::Secp256k1(format!(
+                "EIP-191 signature must be 64 or 65 bytes, got {len}"
+            ))))
         }
     };
 
     let signature = SecpSig::from_slice(sig_data).map_err(|e| {
-        SigningError::Crypto(CryptoError::Secp256k1(alloc::format!(
+        SigningError::Crypto(CryptoError::Secp256k1(format!(
             "invalid EIP-191 secp256k1 signature: {e}"
         )))
     })?;
@@ -464,7 +458,7 @@ fn verify_eip191_ecrecover(
     sig_bytes: &[u8],
 ) -> Result<(), SigningError> {
     morpheum_primitives::crypto::eip191_ecrecover_verify(expected_addr, sign_doc_bytes, sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(alloc::format!("{e}"))))
+        .map_err(|e| SigningError::Crypto(CryptoError::Secp256k1(format!("{e}"))))
 }
 
 /// Ed25519 verification for Solana off-chain messages (hex-encoded SignDoc).
@@ -485,7 +479,7 @@ fn verify_ed25519_hex_encoded(
 ) -> Result<(), SigningError> {
     let hex_encoded = hex::encode(sign_doc_bytes);
     morpheum_primitives::crypto::verify_ed25519_bytes(key_bytes, hex_encoded.as_bytes(), sig_bytes)
-        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(alloc::format!("{e}"))))
+        .map_err(|e| SigningError::Crypto(CryptoError::Ed25519(format!("{e}"))))
 }
 
 // ============================================================================

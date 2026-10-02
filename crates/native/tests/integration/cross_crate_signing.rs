@@ -65,7 +65,8 @@ fn payload_to_any(type_url: &str, payload: &Payload) -> Any {
 }
 
 /// Creates an `AgentSigner` with a `TradingKeyClaim` whose issuer matches
-/// the signer's public key — required for `verify_signed_tx` with `claim-verification`.
+/// the signer's public key — required by `verify_signed_tx`, which binds the
+/// claim's issuer to the signer.
 fn create_agent_with_matching_claim(seed: &[u8; 32]) -> (AgentSigner, TradingKeyClaim) {
     // Derive the public key AccountId first (this is what the verifier checks).
     let temp = AgentSigner::new(seed, AccountId::ZERO, None);

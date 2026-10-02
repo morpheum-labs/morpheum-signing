@@ -22,7 +22,7 @@ Sign transactions from **MetaMask, Phantom, Taproot, native keys**, and **Tradin
 - **Agent-first** — `AgentSigner` with `TradingKeyClaim` and isolated nonce sub-ranges for unlimited parallelism
 - **Dual target** — Native Rust (CLI, bots, agents) + WASM/TypeScript (browser frontends)
 - **Proto-centric** — Produces exact Morpheum `Tx`, `SignDoc`, `TxRaw`, `Nonce`
-- **Zero-copy & secure** — `ZeroizeOnDrop` on all secret material, `no_std` core, constant-time cryptographic operations
+- **Zero-copy & secure** — `ZeroizeOnDrop` on all secret material, constant-time cryptographic operations
 - **Fuzz tested** — `cargo-fuzz` targets for seed generation, claim construction, address mapping, and claim encoding
 
 ---
@@ -244,8 +244,6 @@ the correct `SignerInfo.public_key` protobuf encoding and `ModeInfo.sign_mode` v
 | `full` | Yes | Enables everything below |
 | `full-crypto` | via `full` | All crypto backends (ed25519, secp256k1, schnorr) |
 | `bip39` | via `full` | BIP-39 mnemonic key derivation |
-| `claim-verification` | via `full` | `TradingKeyClaim::verify()` method |
-| `dynamic-signer-info` | via `full` | Per-signer `public_key_proto()` and `sign_mode()` |
 | `http` | via `full` | Nonce providers (Sentry + AgentPortal) |
 | `evm` | via `full-crypto` | `EvmSigner` (secp256k1) |
 | `solana` | via `full-crypto` | `SolanaSigner` (ed25519) |
@@ -258,7 +256,7 @@ the correct `SignerInfo.public_key` protobuf encoding and `ModeInfo.sign_mode` v
 ```
 morpheum-signing/
 ├── crates/
-│   ├── core/       no_std core: Signer trait, TxBuilder, types, claim, error
+│   ├── core/       core: Signer trait, TxBuilder, types, claim, error
 │   ├── native/     std: NativeSigner, AgentSigner, EvmSigner, SolanaSigner, BitcoinSigner
 │   │   └── examples/  Rust examples (native, agent, agent_with_claim_verification)
 │   └── wasm/       WASM + TS: TxBuilderWasm, MetaMask/Phantom/Taproot adapters
@@ -268,7 +266,7 @@ morpheum-signing/
 └── README.md       This file
 ```
 
-- **`core/`** — `no_std` core (traits, types, generic `TxBuilder`, claim handling, error types)
+- **`core/`** — core (traits, types, generic `TxBuilder`, claim handling, error types)
 - **`native/`** — Concrete local signers, nonce providers, and multi-chain support
 - **`wasm/`** — Browser + TypeScript bindings with factory methods (`newMetamask()`, `newPhantom()`, `newTaproot()`)
 
@@ -298,7 +296,6 @@ This SDK is designed for production deployment with the following guarantees:
 - Feature-gated capabilities for minimal attack surface in constrained builds.
 
 **Compatibility**
-- `no_std` core for embedded and WASM use.
 - Full WASM + TypeScript support with rich type definitions.
 - Backward-compatible: new features are opt-in via feature flags.
 

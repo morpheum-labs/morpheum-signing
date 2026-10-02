@@ -1,7 +1,7 @@
 //! TradingKeyClaim verification, encoding, and edge-case tests.
 //!
 //! Covers:
-//! - `verify()` (with `claim-verification` feature)
+//! - `verify()`
 //! - `to_proto_any()` / `encode_to_vec()` deterministic encoding
 //! - `claim_digest()` stability and exclusion of signature field
 //! - `sub_range_size()` correctness
@@ -16,7 +16,6 @@ use morpheum_signing_core::{
 
 // ==================== VERIFICATION TESTS ====================
 
-#[cfg(feature = "claim-verification")]
 mod verification {
     use super::*;
     use morpheum_signing_core::signer::Signer;

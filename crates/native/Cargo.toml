@@ -9,7 +9,7 @@ homepage.workspace = true
 description = "Native (std) concrete implementations for Morpheum Signing SDK"
 
 [dependencies]
-morpheum-signing-core = { path = "../core", features = ["std"] }
+morpheum-signing-core = { path = "../core" }
 
 # Networking & runtime
 reqwest = { workspace = true, optional = true }
@@ -62,10 +62,6 @@ full-crypto = ["native", "evm", "solana", "bitcoin"]
 # BIP-39 mnemonic derivation
 bip39 = ["dep:bip39"]
 
-# Forward audit-driven features to core
-claim-verification = ["morpheum-signing-core/claim-verification"]
-dynamic-signer-info = ["morpheum-signing-core/dynamic-signer-info"]
-
 # Chain-side transaction verification (ed25519 + secp256k1) — forwards to core
 verifier = ["morpheum-signing-core/full-crypto"]
 
@@ -74,7 +70,7 @@ verifier = ["morpheum-signing-core/full-crypto"]
 cryptogram = ["morpheum-signing-core/cryptogram"]
 
 # Everything
-full = ["http", "full-crypto", "bip39", "claim-verification", "dynamic-signer-info"]
+full = ["http", "full-crypto", "bip39"]
 
 [dev-dependencies]
 morpheum-crypto = { workspace = true }

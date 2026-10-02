@@ -7,8 +7,6 @@
 //! This module is deliberately lightweight and focused — it only constructs,
 //! validates, serializes, and verifies claims. Actual signing happens in the `Signer` trait.
 
-use alloc::vec::Vec;
-
 use crate::proto::Any;
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -117,7 +115,6 @@ impl TradingKeyClaim {
     /// # Errors
     ///
     /// Returns `SigningError::InvalidClaim` if any validation check fails.
-    #[cfg(feature = "claim-verification")]
     pub fn verify(
         &self,
         now_secs: u64,
@@ -219,7 +216,7 @@ impl TradingKeyClaim {
         }
 
         let any = Any::decode(opts.wasm_seed.as_slice()).map_err(|e| {
-            SigningError::invalid_claim(alloc::format!("failed to decode claim Any envelope: {e}"))
+            SigningError::invalid_claim(format!("failed to decode claim Any envelope: {e}"))
         })?;
 
         if any.type_url != TRADING_KEY_CLAIM_TYPE_URL {
@@ -227,9 +224,7 @@ impl TradingKeyClaim {
         }
 
         let proto = TradingKeyClaimProto::decode(any.value.as_slice()).map_err(|e| {
-            SigningError::invalid_claim(alloc::format!(
-                "failed to decode TradingKeyClaim proto: {e}"
-            ))
+            SigningError::invalid_claim(format!("failed to decode TradingKeyClaim proto: {e}"))
         })?;
 
         let issuer_bytes: [u8; 32] = proto

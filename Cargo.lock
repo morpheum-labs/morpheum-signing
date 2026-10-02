@@ -2556,8 +2556,6 @@ dependencies = [
  "sha3",
  "thiserror 2.0.18",
  "tokio",
- "tsify",
- "wasm-bindgen",
  "zeroize",
 ]
 

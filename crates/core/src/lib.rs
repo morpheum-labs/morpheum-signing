@@ -1,18 +1,15 @@
 //! Morpheum Signing SDK — Core Library
 //!
-//! Minimal, `no_std` compatible foundation for universal multi-chain signing.
+//! Foundation for universal multi-chain signing.
 //! Supports humans (`MetaMask`, Phantom, Taproot, etc.) and AI agents (`TradingKey` + VC claims).
 //!
-//! This crate is deliberately thin and depends **only** on the published
+//! This crate is deliberately thin and depends **only** on the sibling
 //! `morpheum-primitives` crate for all protobuf types (Tx, `SignDoc`, Nonce, etc.).
 //! No direct dependency on `.proto` files (types come via `morpheum-primitives` → `morpheum-proto`).
 
-#![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs, clippy::all, rust_2018_idioms)]
 #![allow(clippy::module_name_repetitions)]
-
-extern crate alloc;
 
 // ==================== PUBLIC MODULES ====================
 

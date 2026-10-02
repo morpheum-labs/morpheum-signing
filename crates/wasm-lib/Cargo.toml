@@ -12,7 +12,7 @@ description = "Shared WASM wallet adapters (MetaMask, Phantom, Taproot) for reus
 crate-type = ["rlib"]
 
 [dependencies]
-morpheum-signing-core = { path = "../core", default-features = false, features = ["std", "wasm"] }
+morpheum-signing-core = { path = "../core" }
 
 async-trait = { workspace = true }
 prost = { workspace = true }

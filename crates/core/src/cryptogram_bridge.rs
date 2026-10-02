@@ -15,7 +15,7 @@
 //!
 //! # Feature Gate
 //!
-//! Requires the `cryptogram` feature (implies `std`).
+//! Requires the `cryptogram` feature.
 
 use crate::{
     error::SigningError,
