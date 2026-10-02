@@ -32,12 +32,10 @@ pub struct TxBuilder<S: Signer> {
     chain_id: String,
     /// Genesis hash of the target chain, bound into the `SignDoc` preimage so
     /// a signature cannot be replayed onto a different chain instance sharing
-    /// this one's `chain_id` (Phase M3 — `O20` / audit row `C12`).
+    /// this one's `chain_id`.
     ///
-    /// Empty means unbound, which verifiers still accept while
-    /// `FORK_VERSION_STRICT_GENESIS_BINDING` is advisory — such a signature
-    /// lands on the `GenesisUnbound` preimage rung. Set it via
-    /// [`TxBuilder::with_genesis_hash`] whenever the value is available.
+    /// Required: [`TxBuilder::sign`] refuses to build while this is empty. Set
+    /// it via [`TxBuilder::with_genesis_hash`].
     genesis_hash: Vec<u8>,
     account_number: Option<u64>,
     memo: Option<String>,
@@ -51,20 +49,15 @@ pub struct TxBuilder<S: Signer> {
     wallet_adapter: Option<BoxedWalletAdapter>,
     trading_key_claim: Option<TradingKeyClaim>,
     priority_tip: u128,
-    /// Submitter-asserted semantics tier consumed by the
-    /// consensus tie-break (Phase 23A — semantics-aware ordering).
+    /// Submitter-asserted semantics tier used by the chain's
+    /// semantics-aware intra-block ordering.
     /// Defaults to [`morpheum_primitives::tx_class::TxClass::Standard`]
-    /// (wire `0`) so pre-23A call-sites that omit the field inherit
-    /// the legacy ordering by construction.
+    /// (wire `0`) so call-sites that omit the field get the default
+    /// ordering by construction.
     tx_class: morpheum_primitives::tx_class::TxClass,
-    /// Submitter-asserted urgency hint (Phase 22X.5.D Stage 2.E.1 —
-    /// L17 `WorkloadUrgentFlagAssignmentPolicyMode` implementation).
-    /// Stamped onto `TxBody.urgent` (proto field 6); consumed
-    /// chain-side by `priority_flood::classify_validated` to route
-    /// between the MAV path (`false`, default) and the direct flood
-    /// path (`true`). Defaults to `false` so pre-22X.5.D call-sites
-    /// that omit the field land on the legacy MAV-routed semantics
-    /// by construction.
+    /// Submitter-asserted urgency hint, stamped onto `TxBody.urgent`
+    /// (proto field 6). Defaults to `false`, so call-sites that omit
+    /// the field submit a non-urgent transaction by construction.
     urgent: bool,
     // Agent-specific context (optional, zero overhead for regular users).
     agent_did: Option<String>,
@@ -122,20 +115,14 @@ impl<S: Signer> TxBuilder<S> {
     }
 
     /// Binds the transaction signing preimage to the target chain's genesis
-    /// hash (Phase M3 — audit `O20` / row `C12`). **Set this whenever you can.**
+    /// hash, so a signature valid on this chain cannot be replayed onto
+    /// another chain sharing its `chain_id`.
     ///
-    /// Without it a signature authorises the transaction on *any* chain that
-    /// shares this one's `chain_id` — exactly the cross-chain replay the
-    /// binding exists to prevent.
-    ///
-    /// Not yet enforced at [`sign`](Self::sign), because no RPC currently
-    /// exposes the chain's genesis hash, so callers have no way to obtain one:
-    /// refusing here would leave them unable to sign at all. Verifiers accept
-    /// unbound signatures while
-    /// [`FORK_VERSION_STRICT_GENESIS_BINDING`](morpheum_primitives::consensus_wire::FORK_VERSION_STRICT_GENESIS_BINDING)
-    /// is advisory — they land on the `GenesisUnbound` rung. Enforcement here
-    /// is what will eventually let that fork activate, and is gated on giving
-    /// clients a source for the value first.
+    /// Required: [`sign`](Self::sign) refuses to build without it and returns
+    /// [`SigningError::GenesisHashUnset`]. Take the value from operator
+    /// configuration, never from the node the transaction is submitted to —
+    /// whoever controls that endpoint would otherwise choose which chain the
+    /// signature authorises.
     #[must_use]
     pub fn with_genesis_hash(mut self, hash: impl Into<Vec<u8>>) -> Self {
         self.genesis_hash = hash.into();
@@ -200,14 +187,14 @@ impl<S: Signer> TxBuilder<S> {
         self
     }
 
-    /// Declares the transaction's semantics tier for the Phase 23A
+    /// Declares the transaction's semantics tier for the chain's
     /// tier-aware intra-block tie-break. Leaving this unset defaults
     /// to [`morpheum_primitives::tx_class::TxClass::Standard`] (wire
-    /// `0`), which matches pre-23A behavior.
+    /// `0`), the default ordering.
     ///
-    /// Submitter-asserted on the wire; the consensus crate orders by
-    /// tier but does NOT verify semantics — the runtime executor
-    /// rejects mis-declared transactions at execution (a `PostOnly`
+    /// Submitter-asserted on the wire; ordering uses the declared
+    /// tier but does NOT verify semantics — a mis-declared
+    /// transaction is rejected at execution (a `PostOnly`
     /// that crosses, a `Cancel` against a non-existent order, etc.).
     /// See [`morpheum_primitives::tx_class`] for the encoding
     /// contract and SRP boundary.
@@ -217,24 +204,15 @@ impl<S: Signer> TxBuilder<S> {
         self
     }
 
-    /// Declares the transaction's `urgent` routing hint
-    /// (Phase 22X.5.D Stage 2.E.1 — L17
-    /// `WorkloadUrgentFlagAssignmentPolicyMode` implementation).
+    /// Declares the transaction's submitter-asserted `urgent` hint.
     ///
     /// Stamped onto `TxBody.urgent` (proto field 6); signed via
     /// `SignDoc.body_bytes` so a relayer or gossip peer cannot
-    /// forge it. Consumed chain-side by
-    /// `priority_flood::classify_validated` to route between the
-    /// MAV path (`false`, default — the `MarkerRoutedToMavPathOnlyByDesign`
-    /// Hypothesis-B confirmed path closed in §2.15.R) and the
-    /// direct flood path (`true` — the §5.2I 4-axis matrix
-    /// `TipsConvergeToFloodPath` slot enabled by §2.15.S).
+    /// forge it.
     ///
-    /// Leaving this unset defaults to `false`, which is
-    /// byte-equivalent on the wire to pre-22X.5.D peers (proto3
-    /// default-elides `bool` `false` → zero-byte cost on the
-    /// legacy untipped path; tipped-but-MAV-routed Hypothesis-B
-    /// shape preserved unchanged).
+    /// Leaving this unset defaults to `false`, which proto3 elides
+    /// from the encoding, so an unset hint adds no bytes to the
+    /// transaction.
     ///
     /// The setter is `const fn` for zero-cost monomorphisation on
     /// the workload hot path; `#[must_use]` prevents the
@@ -340,12 +318,10 @@ impl<S: Signer> TxBuilder<S> {
 
         // 0b. Refuse to build a preimage that binds no chain.
         //
-        // An unset genesis hash does not fail — it produces a signature
-        // verifiers still accept, on the weaker `GenesisUnbound` rung. So
-        // forgetting it is a silent downgrade to a signature replayable onto
-        // any chain sharing this `chain_id`, which is precisely what
-        // `FORK_VERSION_STRICT_GENESIS_BINDING` exists to end. Fail closed
-        // instead: a signature that binds nothing is not produced at all.
+        // Without a genesis hash the preimage binds no chain instance, and the
+        // signature would be replayable onto any chain sharing this
+        // `chain_id`. Fail closed: a signature that binds nothing is not
+        // produced at all.
         //
         // ORDER IS LOAD-BEARING. This runs BEFORE the nonce is resolved. The
         // provider path (`Sentry` / `AgentPortal`) hands out a monotonic value
@@ -390,7 +366,7 @@ impl<S: Signer> TxBuilder<S> {
         // 3. Build AuthInfo + SignerInfo
         //
         // With `dynamic-signer-info`: public key and sign mode are derived from
-        // the signer's actual key type (fixes Critical Issue #1 from audit).
+        // the signer's actual key type.
         // Without: falls back to legacy hardcoded ed25519 for backward compat.
 
         // Auto-derive trading_key_address from TradingKeyClaim.subject when
@@ -438,12 +414,11 @@ impl<S: Signer> TxBuilder<S> {
             trading_key_address,
         };
 
-        // 3.5 Embed TradingKeyClaim if present (fixes Critical Issue #2).
+        // 3.5 Embed TradingKeyClaim if present.
         //
         // The claim is validated for structural correctness (expiry, nonce range,
         // signature presence) and then serialized into the `SignerInfo.signing_options`
-        // field. The chain-side extracts and cryptographically verifies the claim
-        // via the VC hot-path.
+        // field, where verifiers extract it and verify it cryptographically.
         if let Some(ref claim) = self.trading_key_claim {
             #[cfg(feature = "std")]
             {
@@ -473,21 +448,19 @@ impl<S: Signer> TxBuilder<S> {
 
         // 5. Build SignDoc (the exact bytes that get signed) through the
         // preimage SSOT in `morpheum-primitives`. The `genesis_hash` field
-        // (Phase M3 — `O20` / `C12`) binds the signature to a specific chain
-        // instance so a valid signature cannot be replayed on a forked chain
-        // that happens to share a `chain_id`.
+        // binds the signature to a specific chain instance so a valid
+        // signature cannot be replayed on another chain that happens to share
+        // a `chain_id`.
         //
         // Assembled there rather than here so this signer cannot drift from
         // the verifiers: a field added to the preimage lands on both sides at
         // once, by construction.
         // The nonce resolved in step 1 is stamped onto `Tx.nonce` below, and is
-        // bound here so the two cannot diverge. `Tx.nonce` used to sit outside
-        // the signature entirely, which let an observer rewrite it on a validly
-        // signed transaction and resubmit — see `FORK_VERSION_STRICT_NONCE_BINDING`.
+        // bound here so the two cannot diverge: the signature covers the exact
+        // nonce the transaction carries.
         //
         // This builder always resolves a concrete nonce (manual > provider >
-        // default), so it always binds one; it never emits the `None` that a
-        // pre-binding signer produced.
+        // default), so it always binds one; it never emits `None`.
         let sign_doc = canonical_sign_doc(
             body_bytes.clone(),
             auth_info_bytes.clone(),
@@ -523,19 +496,16 @@ impl<S: Signer> TxBuilder<S> {
 
 #[cfg(test)]
 mod tests {
-    //! Phase 22X.4.5 Pin A — bench wire-side determinism.
+    //! Wire-side determinism of the signed transaction body.
     //!
     //! Asserts that `TxBuilder::priority_tip(N).sign().await` produces a
     //! signed `Tx` whose `body.priority_tip` round-trips byte-identically
     //! through prost encode → decode AND agrees with
     //! `morpheum_primitives::priority_fee::parse_tip_oneirs` for every
-    //! boundary value in `{0, 1, MIN_TIP_ONEIRS, u128::MAX}`. A regression
-    //! that flips the `if self.priority_tip == 0 { "" } else {
-    //! tip.to_string() }` branch at line 317-321 (or that the prost wire
-    //! drops the field) silently zeros downstream emission gates and
-    //! breaks every `consensus.economics.*` MEV gauge — see
-    //! [`mormcore/docs/consensus/bench/phase22x4-5-stage-0-scope.md`](../../../mormcore/docs/consensus/bench/phase22x4-5-stage-0-scope.md)
-    //! §3 for the H2 hypothesis taxonomy.
+    //! boundary value in `{0, 1, MIN_TIP_ONEIRS, u128::MAX}`. A change that
+    //! flips the `if self.priority_tip == 0 { "" } else {
+    //! tip.to_string() }` branch (or a prost encoding that drops the field)
+    //! would silently change the tip a signed transaction carries.
 
     use super::*;
     use crate::proto::tx::v1::{SignDoc, Tx as ProtoTx};
@@ -547,7 +517,7 @@ mod tests {
     use std::sync::Arc;
 
     /// Hermetic test signer — emits a deterministic stub Ed25519 signature
-    /// without invoking any crypto backend. The Pin A contract targets the
+    /// without invoking any crypto backend. These tests target the
     /// wire body field only; the signature path is irrelevant to the
     /// `body.priority_tip` round-trip assertion. Defined locally so the
     /// `core` crate's `#[cfg(test)]` module stays self-contained (no
@@ -607,11 +577,10 @@ mod tests {
 
     /// A preimage that binds no chain is not produced at all.
     ///
-    /// The failure mode this closes is not a crash — it is silence. An unset
-    /// genesis hash still yields a valid signature, accepted on the weaker
-    /// `GenesisUnbound` rung, and replayable onto any chain sharing this
-    /// `chain_id`. Nothing about the returned `SignedTx` would have looked
-    /// wrong.
+    /// An unset genesis hash would not make signing fail on its own — it
+    /// would yield a signature that binds no chain instance and is
+    /// replayable onto any chain sharing this `chain_id`, with nothing about
+    /// the returned `SignedTx` looking wrong. `sign` refuses instead.
     #[tokio::test]
     async fn sign_refuses_to_build_a_preimage_that_binds_no_chain() {
         let err = TxBuilder::new(StubSigner)
@@ -655,7 +624,7 @@ mod tests {
         );
     }
 
-    /// Pin A — proto round-trip determinism for the four-value boundary
+    /// Proto round-trip determinism for the four-value boundary
     /// table `tip_oneirs ∈ {0, 1, MIN_TIP_ONEIRS, u128::MAX}`.
     ///
     /// Steps per row:
@@ -667,8 +636,8 @@ mod tests {
     ///    `ProtoTx::decode` → assert the decoded `body.priority_tip` is
     ///    byte-identical to the pre-encode value.
     /// 4. Assert `parse_tip_oneirs(&decoded.body.priority_tip).unwrap_or(0)`
-    ///    equals `N` (the chain-side admission helper agrees with the
-    ///    bench-side encoder for every boundary value).
+    ///    equals `N` (the shared primitives parser agrees with this
+    ///    encoder for every boundary value).
     #[tokio::test]
     async fn phase22x4_5_pin_a_priority_tip_round_trips_through_prost_for_boundary_table() {
         const TABLE: [u128; 4] = [0u128, 1u128, MIN_TIP_ONEIRS, u128::MAX];
@@ -719,42 +688,25 @@ mod tests {
     }
 
     /// Canonical proto3 wire-byte triple for `TxBody.priority_tip = "1"`
-    /// — `[tag=0x22, len=0x01, ascii_one=0x31]`. SSOT-mirrored from
-    /// [`mormcore::consensus::metrics_self_diagnostic::PRIORITY_TIP_ONE_TAG_4_WIRE`]
-    /// (the chain-side admission scanner reuses the same triple).
-    /// Inlined here because `morpheum-signing-core` is upstream of
-    /// `morpheum-consensus` in the workspace dependency graph; a
-    /// proto-level edit that breaks the derivation flips the build-
-    /// time invariant in
-    /// [`morpheum-proto/tests/priority_tip_wire_tag_invariant.rs`](../../../../morpheum-proto/tests/priority_tip_wire_tag_invariant.rs)
-    /// before this constant can ever drift silently.
+    /// — `[tag=0x22, len=0x01, ascii_one=0x31]` (field 4, length-delimited,
+    /// the one-byte string `"1"`). Written out literally so the expectation
+    /// is stated independently of the encoder under test.
     const PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE: [u8; 3] = [0x22, 0x01, 0x31];
 
-    /// Pin L — full bench-side encoder pin asserting that
+    /// Full-encoder pin asserting that
     /// `TxBuilder::priority_tip(1).sign()` produces a `Tx` whose
     /// **fully-encoded prost wire bytes** (the exact bytes that go
     /// out over the gRPC `submit_tx` channel) contain the canonical
     /// triple `[0x22, 0x01, 0x31]` exactly once.
     ///
-    /// **Why this strictly subsumes Pin A.** Pin A asserts the
-    /// round-trip on `signed.tx().body.priority_tip` (string field).
-    /// Pin L closes the next layer: even if `body.priority_tip` is
-    /// `"1"` in memory, a regression that mis-tags the field on the
-    /// wire (e.g. a stale `morpheum-proto` $OUT_DIR cache linked
-    /// against the signing crate, a custom `Encode` impl that drops
-    /// the field, a hypothetical `#[prost(skip)]` annotation) would
-    /// pass Pin A but fail Pin L. Pin L is the bench-side mirror of
-    /// the chain-side admission scanner's invariant — the two
-    /// bridge the bench → wire → chain pipeline at byte-identity.
-    ///
-    /// **§2.13 forensic context.** The Phase 22X.4.7 §2.13 Pin J
-    /// drive observed
-    /// `consensus.ingress.admission_payload_priority_tip_one_marker_present_count`
-    /// Σ=0 across every validator pod despite the bench configuring
-    /// `MORM_BENCH_MEV_EXTRACTION_TIP_INTERLEAVE_N=1` +
-    /// `_TIP_ONEIRS=1`. Pin L is the unit-local pre-flight pin
-    /// that catches the regression class **before** the operator
-    /// pays the cluster bring-up cost.
+    /// **Why this goes beyond the round-trip test above.** That test
+    /// asserts the round-trip on `signed.tx().body.priority_tip`
+    /// (string field). This one closes the next layer: even if
+    /// `body.priority_tip` is `"1"` in memory, a change that mis-tags
+    /// the field on the wire (e.g. a stale `morpheum-proto` $OUT_DIR
+    /// cache linked against the signing crate, a custom `Encode` impl
+    /// that drops the field, a hypothetical `#[prost(skip)]`
+    /// annotation) would pass the round-trip test but fail this one.
     #[tokio::test]
     async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_one_emits_canonical_wire_triple() {
         let signed = TxBuilder::new(StubSigner)
@@ -787,18 +739,16 @@ mod tests {
         );
     }
 
-    /// Pin L (negative-symmetry) — `TxBuilder::priority_tip(0).sign()`
+    /// Negative symmetry — `TxBuilder::priority_tip(0).sign()`
     /// MUST produce a wire stream that does **NOT** contain the
     /// canonical tipped triple. Locks the wire-omission convention
-    /// (proto3 default-value elision) on the full bench encoder so
-    /// the marker scan stays bit-identity with admission semantics:
+    /// (proto3 default-value elision) on the full encoder:
     /// "untipped tx" ⇔ "no `[0x22, 0x01, 0x31]` on the wire".
     ///
-    /// Without this negative pin, a hypothetical regression that
+    /// Without this negative pin, a hypothetical change that
     /// always emits `priority_tip = "1"` (regardless of caller
-    /// intent) would silently flip every untipped admission into
-    /// the tipped wire-byte sentinel's positive distribution and
-    /// alias the §5.2O matrix's tipped-vs-untipped strata.
+    /// intent) would silently tip every transaction the caller
+    /// meant to leave untipped.
     #[tokio::test]
     async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_zero_omits_canonical_wire_triple() {
         let signed = TxBuilder::new(StubSigner)
@@ -828,24 +778,19 @@ mod tests {
         );
     }
 
-    /// **Phase 22X.5.D Stage 2.E.1 integration test (C8.i.2) —
-    /// L17 `TxBuilder::urgent` round-trip.**
+    /// **`TxBuilder::urgent` round-trip.**
     ///
     /// `TxBuilder::urgent(true).sign()` MUST produce a signed
-    /// `Tx` whose `body.urgent == true` after prost
-    /// encode → decode (catches a regression where the field is
-    /// stripped on the wire) AND whose encoded byte stream
-    /// contains the proto3 `bool` true-byte tag-6 wire pair
-    /// `[0x30, 0x01]` (catches a regression where the encoder
-    /// silently emits a different field number).
+    /// `Tx` whose `body.urgent == true` both in memory and after
+    /// prost encode → decode (catches a change where the field is
+    /// stripped on the wire), and `urgent(false)` MUST round-trip
+    /// as `false`.
     ///
-    /// Without this pin, a bench-driven §2.15.S drive could
-    /// configure `TipConditional{1}` correctly + the
-    /// `TxBuilder::urgent` setter could be a no-op (e.g. a
-    /// future refactor that drops the `urgent: self.urgent`
-    /// wire-up from the `TxBody { .. }` literal at line ~324)
-    /// and the bench would still ship `body.urgent = false`
-    /// for every tx, silently reproducing the §2.15.R shape.
+    /// Without this pin, the `TxBuilder::urgent` setter could
+    /// become a no-op (e.g. a refactor that drops the
+    /// `urgent: self.urgent` wire-up from the `TxBody { .. }`
+    /// literal) and every transaction would still ship
+    /// `body.urgent = false` regardless of what the caller asked for.
     #[tokio::test]
     async fn phase22x5_d_stage_2_e_1_tx_builder_urgent_round_trips_on_wire() {
         let signed_urgent = TxBuilder::new(StubSigner)

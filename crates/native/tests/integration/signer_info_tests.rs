@@ -1,7 +1,8 @@
 //! Dynamic `SignerInfo` tests — verifies each signer produces correct
 //! `public_key_proto()` and `sign_mode()` for its wallet type.
 //!
-//! This directly addresses the audit's **Critical Issue #1**: hardcoded ed25519.
+//! Pins that the public key and sign mode follow the signer's actual key type
+//! rather than assuming ed25519.
 
 use morpheum_signing_core::{prelude::*, signer::Signer};
 use morpheum_signing_native::prelude::*;
