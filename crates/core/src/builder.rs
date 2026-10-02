@@ -639,7 +639,7 @@ mod tests {
     ///    equals `N` (the shared primitives parser agrees with this
     ///    encoder for every boundary value).
     #[tokio::test]
-    async fn phase22x4_5_pin_a_priority_tip_round_trips_through_prost_for_boundary_table() {
+    async fn priority_tip_round_trips_through_prost_for_boundary_values() {
         const TABLE: [u128; 4] = [0u128, 1u128, MIN_TIP_ONEIRS, u128::MAX];
 
         for &tip_oneirs in &TABLE {
@@ -691,7 +691,7 @@ mod tests {
     /// — `[tag=0x22, len=0x01, ascii_one=0x31]` (field 4, length-delimited,
     /// the one-byte string `"1"`). Written out literally so the expectation
     /// is stated independently of the encoder under test.
-    const PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE: [u8; 3] = [0x22, 0x01, 0x31];
+    const PRIORITY_TIP_ONE_WIRE_TRIPLE: [u8; 3] = [0x22, 0x01, 0x31];
 
     /// Full-encoder pin asserting that
     /// `TxBuilder::priority_tip(1).sign()` produces a `Tx` whose
@@ -708,7 +708,7 @@ mod tests {
     /// that drops the field, a hypothetical `#[prost(skip)]`
     /// annotation) would pass the round-trip test but fail this one.
     #[tokio::test]
-    async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_one_emits_canonical_wire_triple() {
+    async fn priority_tip_one_encodes_the_canonical_wire_triple_once() {
         let signed = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
             .with_genesis_hash(TEST_GENESIS_HASH)
@@ -720,22 +720,16 @@ mod tests {
 
         let encoded = signed.tx().encode_to_vec();
         let occurrences = encoded
-            .windows(PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE.len())
-            .filter(|w| *w == PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE)
+            .windows(PRIORITY_TIP_ONE_WIRE_TRIPLE.len())
+            .filter(|w| *w == PRIORITY_TIP_ONE_WIRE_TRIPLE)
             .count();
 
         assert_eq!(
             occurrences, 1,
-            "Pin L: TxBuilder::priority_tip(1).sign().tx().encode_to_vec() MUST contain the \
-             canonical wire triple [0x22, 0x01, 0x31] exactly once (proto3 tag-4 LEN-delimited \
-             string \"1\"). Got {occurrences} occurrences in encoded bytes {encoded:?}. \
-             Remediation tree: \
-             (1) `morpheum-proto/tests/priority_tip_wire_tag_invariant.rs::txbody_priority_tip_one_encodes_canonical_tag_4_wire_triple` \
-             also red → proto edit reassigned field-number 4; revert or re-tag. \
-             (2) Proto pin GREEN but Pin L red → bench-side `TxBuilder::sign()` is dropping or \
-             reshaping `body.priority_tip` between the in-memory body and the encoded `Tx` \
-             (audit `builder.rs:317-321` for an off-by-one branch flip on the \
-             `if self.priority_tip == 0` guard).",
+            "TxBuilder::priority_tip(1).sign().tx().encode_to_vec() must contain the \
+             canonical wire triple [0x22, 0x01, 0x31] exactly once (proto3 field 4, \
+             length-delimited string \"1\"). Got {occurrences} occurrences in encoded bytes \
+             {encoded:?}.",
         );
     }
 
@@ -750,7 +744,7 @@ mod tests {
     /// intent) would silently tip every transaction the caller
     /// meant to leave untipped.
     #[tokio::test]
-    async fn phase22x4_7_stage_3_e_x_pin_l_priority_tip_zero_omits_canonical_wire_triple() {
+    async fn priority_tip_zero_omits_the_canonical_wire_triple() {
         let signed = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
             .with_genesis_hash(TEST_GENESIS_HASH)
@@ -762,19 +756,16 @@ mod tests {
 
         let encoded = signed.tx().encode_to_vec();
         let occurrences = encoded
-            .windows(PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE.len())
-            .filter(|w| *w == PIN_L_PRIORITY_TIP_ONE_TAG_4_WIRE)
+            .windows(PRIORITY_TIP_ONE_WIRE_TRIPLE.len())
+            .filter(|w| *w == PRIORITY_TIP_ONE_WIRE_TRIPLE)
             .count();
 
         assert_eq!(
             occurrences, 0,
-            "Pin L (negative): TxBuilder::priority_tip(0).sign().tx().encode_to_vec() MUST NOT \
-             contain the canonical wire triple [0x22, 0x01, 0x31] anywhere (proto3 elides \
-             default-value strings). Got {occurrences} occurrences in encoded bytes {encoded:?}. \
-             A non-zero count here means the encoder is shipping `priority_tip = \"1\"` for \
-             tip_oneirs=0, which would alias every untipped admission into the wire-byte \
-             sentinel's tipped distribution and structurally break the §5.2O Pin J matrix's \
-             tipped-vs-untipped strata.",
+            "TxBuilder::priority_tip(0).sign().tx().encode_to_vec() must not contain the \
+             canonical wire triple [0x22, 0x01, 0x31] anywhere (proto3 elides default-value \
+             strings, so an untipped transaction carries no tip on the wire). Got \
+             {occurrences} occurrences in encoded bytes {encoded:?}.",
         );
     }
 
@@ -792,7 +783,7 @@ mod tests {
     /// literal) and every transaction would still ship
     /// `body.urgent = false` regardless of what the caller asked for.
     #[tokio::test]
-    async fn phase22x5_d_stage_2_e_1_tx_builder_urgent_round_trips_on_wire() {
+    async fn urgent_flag_round_trips_on_the_wire() {
         let signed_urgent = TxBuilder::new(StubSigner)
             .chain_id("morpheum-test-1")
             .with_genesis_hash(TEST_GENESIS_HASH)
@@ -808,10 +799,8 @@ mod tests {
             .expect("signed urgent Tx must carry a body");
         assert!(
             body_urgent.urgent,
-            "C8.i.2 (in-memory): TxBuilder::urgent(true).sign().tx().body.urgent \
-             MUST be true. A false here means the builder is dropping the \
-             `urgent: self.urgent` field assignment at the TxBody construction \
-             site (audit builder.rs around line ~324)."
+            "TxBuilder::urgent(true).sign().tx().body.urgent must be true: the builder \
+             must carry the caller's urgent flag into the TxBody it signs."
         );
         let encoded_urgent = signed_urgent.tx().encode_to_vec();
         let decoded_urgent = ProtoTx::decode(encoded_urgent.as_slice())
@@ -822,11 +811,8 @@ mod tests {
                 .as_ref()
                 .expect("decoded urgent Tx must carry a body")
                 .urgent,
-            "C8.i.2 (wire round-trip): decoded body.urgent MUST be true \
-             after prost encode → decode. A false here means the encoder \
-             is silently stripping or default-eliding the field even when \
-             set to true — would silently disable the §2.15.S \
-             `TipsConvergeToFloodPath` slot at the wire boundary."
+            "decoded body.urgent must be true after prost encode → decode: \
+             an urgent flag set to true must survive the wire encoding."
         );
 
         // Negative-symmetry: urgent=false MUST elide on the wire
@@ -847,8 +833,7 @@ mod tests {
             .expect("signed non-urgent Tx must carry a body");
         assert!(
             !body_non_urgent.urgent,
-            "C8.i.2 (in-memory negative): TxBuilder::urgent(false).sign() \
-             body.urgent MUST be false."
+            "TxBuilder::urgent(false).sign().tx().body.urgent must be false."
         );
         let encoded_non_urgent = signed_non_urgent.tx().encode_to_vec();
         let decoded_non_urgent = ProtoTx::decode(encoded_non_urgent.as_slice())
@@ -859,9 +844,8 @@ mod tests {
                 .as_ref()
                 .expect("decoded non-urgent Tx must carry a body")
                 .urgent,
-            "C8.i.2 (wire round-trip negative): decoded body.urgent MUST be \
-             false (proto3 default-elision preserves backwards-compat with \
-             pre-22X.5.D peers)."
+            "decoded body.urgent must be false after prost encode → decode \
+             (proto3 elides the default value, which decodes as false)."
         );
     }
 }
