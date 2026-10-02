@@ -92,16 +92,13 @@ impl TxBuilderWasm {
         self
     }
 
-    /// Binds the target chain's genesis hash into the signing preimage
-    /// (Phase M3 — audit `O20` / `C12`). **Set this whenever you can.**
+    /// Binds the target chain's genesis hash into the signing preimage, so a
+    /// signature valid on this chain cannot be replayed onto another chain
+    /// sharing the same `chainId`.
     ///
-    /// Without it the signature authorises this transaction on any chain
-    /// sharing the same `chainId` — the cross-chain replay the binding exists
-    /// to prevent. Not yet enforced at `sign()`, because no RPC exposes the
-    /// chain's genesis hash and callers would have no value to supply;
-    /// verifiers accept unbound signatures while
-    /// `FORK_VERSION_STRICT_GENESIS_BINDING` is advisory, placing them on the
-    /// `GenesisUnbound` preimage rung.
+    /// Required: `sign()` refuses to build without it. Take the value from
+    /// operator configuration, never from the node the transaction is
+    /// submitted to.
     #[wasm_bindgen(js_name = "withGenesisHash")]
     pub fn with_genesis_hash(mut self, genesis_hash: Vec<u8>) -> TxBuilderWasm {
         self.inner = self.inner.with_genesis_hash(genesis_hash);
@@ -217,13 +214,11 @@ impl TxBuilderWasm {
 /// than churned.
 ///
 /// `nonce` has no `#[serde(default)]`, so omitting it is an error rather than a
-/// silent empty value. That is the whole point: this crate's defining defect
-/// was a ten-argument call made with eight, where the trailing `genesisHash`
-/// and `nonce` defaulted away and every transaction shipped a nonce no
-/// signature covered. TypeScript callers cannot omit it at all — the parameter
-/// is typed as the interface, so a missing required field fails to compile —
-/// and a plain-JS caller now gets a named deserialization error instead of an
-/// unbound preimage.
+/// silent empty value: the signature must cover the exact nonce the
+/// transaction carries. TypeScript callers cannot omit it at all — the
+/// parameter is typed as the interface, so a missing required field fails to
+/// compile — and a plain-JS caller gets a named deserialization error instead
+/// of an unbound preimage.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SignDocRequestJs {
@@ -252,8 +247,7 @@ struct SignDocRequestJs {
 ///
 /// The signer-less counterpart to `TxBuilder::sign`. Takes one named request
 /// object rather than ten positional parameters — a missing field is a
-/// TypeScript error, whereas a missing trailing argument was a security
-/// downgrade that shipped.
+/// TypeScript error rather than a silently defaulted trailing argument.
 ///
 /// This function is only the JS boundary: it decodes the request, delegates the
 /// actual assembly to
@@ -396,12 +390,12 @@ impl TradingKeyClaimJs {
 /// const claim = new VcClaimBuilderWasm()
 ///     .issuer(issuerBytes)
 ///     .subject(subjectBytes)
-///     .permissions(0x01)
-///     .maxDailyUsd(10000)
-///     .expiry(Math.floor(Date.now() / 1000) + 86400)
+///     .permissions(0x01n)
+///     .maxDailyUsd(10000n)
+///     .expiry(BigInt(Math.floor(Date.now() / 1000) + 86400))
 ///     .nonceSubRange(100, 200)
 ///     .signature(sigBytes, "ed25519")
-///     .build(Math.floor(Date.now() / 1000));
+///     .build(BigInt(Math.floor(Date.now() / 1000)));
 /// ```
 #[wasm_bindgen(js_name = "VcClaimBuilder")]
 pub struct VcClaimBuilderWasm {

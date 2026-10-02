@@ -17,9 +17,9 @@ default = []
 std = ["prost/std", "zeroize/std"]
 # Enables WASM-specific bindings (tsify, wasm-bindgen)
 wasm = ["wasm-bindgen", "tsify"]
-# Dynamic SignerInfo based on signer type (Phase 1)
+# Dynamic SignerInfo based on signer type
 dynamic-signer-info = []
-# TradingKeyClaim embedding & verification (Phase 2)
+# TradingKeyClaim embedding & verification
 claim-verification = []
 # Full cryptographic verification (ed25519 + secp256k1 + keccak256) for chain-side verifier
 full-crypto = ["dep:ed25519-dalek", "dep:k256", "dep:sha3"]

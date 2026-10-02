@@ -14,7 +14,7 @@
 import {
     TxBuilderWasm,
     VcClaimBuilder,
-    set_panic_hook,
+    setPanicHook,
     type SignedTx,
     type TradingKeyClaimInput
 } from '@morpheum/signing';
@@ -23,15 +23,22 @@ async function main() {
     console.log("Morpheum MetaMask Signing Example");
 
     // Enable better panic messages in the browser console
-    set_panic_hook();
+    setPanicHook();
 
     // ── Basic MetaMask transaction ──────────────────────────────────────
 
     // Create builder configured for MetaMask / EVM wallets.
     // This connects to window.ethereum, requests account access,
     // and caches the EVM address + secp256k1 public key.
-    const builder = TxBuilderWasm.newMetamask()
-        .chain_id("morpheum-test-1")
+    // The target chain's 32-byte genesis hash, bound into every signature so
+    // it cannot be replayed onto another chain sharing the chain ID. Take it
+    // from operator configuration, never from the node you submit to; sign()
+    // refuses a transaction built without one.
+    const genesisHash = new Uint8Array(32); // Replace with the configured genesis hash
+
+    const builder = (await TxBuilderWasm.newMetamask())
+        .chainId("morpheum-test-1")
+        .withGenesisHash(genesisHash)
         .memo("Market creation from MetaMask");
 
     // Generic message example (market creation)
@@ -44,7 +51,7 @@ async function main() {
         //   - public_key: /morpheum.crypto.secp256k1.PubKey (33 bytes, compressed)
         //   - mode_info: SIGN_MODE_SECP256K1
         const signedTx = await builder
-            .add_message(
+            .addMessage(
                 "type.googleapis.com/market.v1.MsgCreateMarketRequest",
                 marketMsgBytes
             )
@@ -70,22 +77,23 @@ async function main() {
         const claim = new VcClaimBuilder()
             .issuer(new Uint8Array(32).fill(1))     // 32-byte issuer AccountId
             .subject(new Uint8Array(32).fill(2))     // 32-byte subject AccountId
-            .permissions(0x01)                       // TRADE permission
-            .maxDailyUsd(100_000)                    // $100k daily limit
-            .expiry(nowSecs + 86_400)                // 24 hours from now
+            .permissions(0x01n)                      // TRADE permission
+            .maxDailyUsd(100_000n)                    // $100k daily limit
+            .expiry(BigInt(nowSecs + 86_400))                // 24 hours from now
             .nonceSubRange(1000, 2000)               // 1000 parallel operations
             .signature(new Uint8Array(64).fill(1), "ed25519")  // Issuer's signature
-            .build(nowSecs);
+            .build(BigInt(nowSecs));
 
         console.log("TradingKeyClaim built successfully");
         console.log("  Proto type URL:", claim.proto_any_type_url);
 
         // Attach claim and sign
-        const signedTxWithClaim = await TxBuilderWasm.newMetamask()
-            .chain_id("morpheum-test-1")
+        const signedTxWithClaim = await (await TxBuilderWasm.newMetamask())
+            .chainId("morpheum-test-1")
+            .withGenesisHash(genesisHash)
             .memo("Agent delegation via MetaMask")
             .withClaim(claim)
-            .add_message(
+            .addMessage(
                 "type.googleapis.com/market.v1.MsgCreateMarketRequest",
                 marketMsgBytes
             )
