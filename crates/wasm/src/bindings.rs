@@ -390,12 +390,12 @@ impl TradingKeyClaimJs {
 /// const claim = new VcClaimBuilderWasm()
 ///     .issuer(issuerBytes)
 ///     .subject(subjectBytes)
-///     .permissions(0x01)
-///     .maxDailyUsd(10000)
-///     .expiry(Math.floor(Date.now() / 1000) + 86400)
+///     .permissions(0x01n)
+///     .maxDailyUsd(10000n)
+///     .expiry(BigInt(Math.floor(Date.now() / 1000) + 86400))
 ///     .nonceSubRange(100, 200)
 ///     .signature(sigBytes, "ed25519")
-///     .build(Math.floor(Date.now() / 1000));
+///     .build(BigInt(Math.floor(Date.now() / 1000)));
 /// ```
 #[wasm_bindgen(js_name = "VcClaimBuilder")]
 pub struct VcClaimBuilderWasm {
