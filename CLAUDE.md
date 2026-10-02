@@ -42,11 +42,21 @@ This repo builds on the host (pure Rust). Requires sibling checkouts (see ripple
   fetching would burn a nonce and leave an unskippable gap. Both orderings return the same
   error, so the ordering is pinned by a counting-nonce-provider test
   (`the_refusal_does_not_burn_a_monotonic_nonce`) — keep that test meaningful.
-- **The golden preimage vector pins bytes, not code.** Its constants were captured from the
-  previously shipped package, so they prove refactors preserve the preimage rather than
-  pinning the code against itself. They are single unbroken literals — never re-wrap them
-  (a wrapped literal once silently gained a byte) and never regenerate them from current
-  code.
+- **The golden preimage vector pins bytes, not code.** None of its expected values come from
+  the code under test, so they prove refactors preserve the preimage rather than pinning the
+  code against itself. The body, nonce and `SHIPPED_AUTH_INFO_BYTES` were captured from the
+  previously shipped package and stay verbatim. A field that package did not sign (the gas
+  limit) is appended on top of the capture, its bytes derived by hand from the protobuf
+  encoding rules; the SignDoc hash over the result comes from two encoders independent of
+  prost and of this repo (`protoc --encode` over the schema, and a hand-written encoder),
+  which agree, and each of which also reproduces the shipped hash from the shipped capture.
+  A test holds the golden `AuthInfo` to "capture plus that field". They are single unbroken
+  literals — never re-wrap them (a wrapped literal once silently gained a byte) and never
+  regenerate them from current code.
+- **Every transaction declares a gas limit.** `TxBuilder` signs `DEFAULT_GAS_LIMIT` unless
+  `gas_limit` sets another, and `SignDocRequest.gas_limit` is required (the wasm boundary
+  applies the default when JS omits `gasLimit` or passes `null`). Both take a `TxGasLimit`,
+  so `0` or an over-budget value is refused before anything is signed.
 - **Never hand-write TS declarations for symbols wasm-bindgen generates.** TypeScript
   merges duplicate declarations, and consumer-side type pins can't detect a reintroduced
   overload (`Parameters<T>` reads only the last one). The `typescript_custom_section`

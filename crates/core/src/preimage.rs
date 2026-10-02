@@ -33,6 +33,7 @@ use morpheum_primitives::pb::tx::v1::{self as tx, AuthInfo, ModeInfo, Nonce, Sig
 use morpheum_primitives::tx::sign_doc_signing_bytes;
 
 use crate::proto::Any;
+use crate::TxGasLimit;
 
 /// Proto `type_url` for a 20-byte EVM address or a SEC1 secp256k1 key.
 const SECP256K1_PUBKEY_TYPE_URL: &str = "/cosmos.crypto.secp256k1.PubKey";
@@ -77,6 +78,13 @@ pub struct SignDocRequest {
     /// The nonce this preimage binds. Returned in [`SignDocParts::nonce_bytes`] so
     /// the caller stamps the value the signature actually covered.
     pub nonce: Nonce,
+    /// The gas limit the transaction declares in `AuthInfo.gas_limit`.
+    ///
+    /// Required, with no default at this layer: which limit to declare is the
+    /// caller's decision, and the type admits only a valid declaration, so
+    /// assembly stays total. Callers that want the SDK default pass
+    /// [`DEFAULT_GAS_LIMIT`](crate::DEFAULT_GAS_LIMIT).
+    pub gas_limit: TxGasLimit,
 }
 
 /// The assembled preimage and the encodings a caller needs to build the
@@ -149,7 +157,7 @@ pub fn build_sign_doc(request: &SignDocRequest) -> SignDocParts {
 
     let auth_info = AuthInfo {
         signer_infos: vec![signer_info],
-        gas_limit: 0,
+        gas_limit: request.gas_limit.get(),
     };
 
     let body_bytes = body.encode_to_vec();
@@ -180,7 +188,14 @@ pub fn build_sign_doc(request: &SignDocRequest) -> SignDocParts {
 mod tests {
     use super::*;
 
-    /// The request the golden vector below was captured from.
+    /// The golden vector's declared gas limit.
+    ///
+    /// Deliberately not [`DEFAULT_GAS_LIMIT`](crate::DEFAULT_GAS_LIMIT):
+    /// assembly has no default to reach for, and a value the default cannot
+    /// produce proves the bytes carry the request's own declaration.
+    const GOLDEN_GAS_LIMIT: u64 = 1_000_000;
+
+    /// The request the golden vector below pins.
     fn golden_request() -> SignDocRequest {
         SignDocRequest {
             type_url: "/bucket.v1.MsgCreateBucketRequest".into(),
@@ -199,45 +214,53 @@ mod tests {
                 ts_ms: 1_767_123_968,
                 sub: 5,
             },
+            gas_limit: TxGasLimit::new(GOLDEN_GAS_LIMIT)
+                .expect("the golden gas limit is a valid declaration"),
         }
     }
 
-    /// **Golden vector.** Pins the exact bytes a signature covers.
-    ///
-    /// Captured from the shipped `pkg-node` binding *before* this assembly
-    /// moved out of the wasm crate, by calling `buildSignDocBytes` from Node
-    /// with these inputs. So it does not merely pin the current implementation
-    /// against itself — it proves the move preserved the preimage byte for
-    /// byte, and it fails on any future change to field order, tag numbers,
-    /// default handling, or the `TxBody` / `AuthInfo` shape.
-    ///
-    /// A signature is only as meaningful as the bytes it covers. If these
-    /// change without the verifiers changing in lockstep, every existing
-    /// signature silently stops verifying — or worse, keeps verifying over
-    /// something else.
-    /// The exact bytes the shipped `pkg-node` binding produced for
-    /// [`golden_request`], captured by calling `buildSignDocBytes` from Node
-    /// **before** this assembly moved out of the wasm crate.
-    ///
-    /// Single unbroken literals on purpose. The first draft wrapped them across
-    /// lines and stripped the whitespace back out, and the wrapping silently
-    /// gained a byte — a golden vector transcribed by hand is only as good as
-    /// the transcription, so there is nothing here to transcribe.
+    // **Golden vector**: the exact bytes a signature over `golden_request`
+    // covers.
+    //
+    // Single unbroken literals on purpose. An earlier draft wrapped them
+    // across lines and stripped the whitespace back out, and the wrapping
+    // silently gained a byte — a golden vector transcribed by hand is only as
+    // good as the transcription, so there is nothing here to transcribe.
+    //
+    // Provenance. None of these come from the code under test:
+    //
+    // - `GOLDEN_BODY_BYTES`, `GOLDEN_NONCE_BYTES` and `SHIPPED_AUTH_INFO_BYTES`
+    //   were captured from the shipped `pkg-node` binding, by calling
+    //   `buildSignDocBytes` from Node, before this assembly moved out of the
+    //   wasm crate. That package declared no gas limit.
+    // - `GOLDEN_AUTH_INFO_BYTES` is that capture followed by `AuthInfo` field 2
+    //   carrying `GOLDEN_GAS_LIMIT`, derived from the protobuf encoding rules:
+    //   key `(2 << 3) | 0` = `10`, then varint(1_000_000) = `c0 84 3d`. Known
+    //   fields are written in field-number order and `signer_infos` is field
+    //   1, so the new field is appended.
+    // - `GOLDEN_SIGN_DOC_HASH` is SHA-256 of the `SignDoc` over these bytes,
+    //   computed by two encoders independent of prost and of
+    //   `morpheum-primitives` that agree on it: `protoc --encode` over the
+    //   schema, and a hand-written protobuf encoder. Each of them, run over
+    //   the shipped `AuthInfo`, also reproduces the shipped capture's hash,
+    //   e2279894897d1b2c7f2621a6812f2baaf2ed617be42a33e40d4d3cdd787b0df7.
     const GOLDEN_SIGN_DOC_HASH: &str =
-        "e2279894897d1b2c7f2621a6812f2baaf2ed617be42a33e40d4d3cdd787b0df7";
+        "06743104eb0a429e5af80dcecb211184dc8af0e652e72e6d21017c170b6599d3";
     const GOLDEN_BODY_BYTES: &str =
         "0a2d0a212f6275636b65742e76312e4d73674372656174654275636b65745265717565737412080a06676f6c64656e120b676f6c64656e2d6d656d6f";
-    const GOLDEN_AUTH_INFO_BYTES: &str =
+    const SHIPPED_AUTH_INFO_BYTES: &str =
         "0a410a370a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b65791214abababababababababababababababababababab12040a0208071801";
+    const GOLDEN_AUTH_INFO_BYTES: &str =
+        "0a410a370a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b65791214abababababababababababababababababababab12040a020807180110c0843d";
     const GOLDEN_NONCE_BYTES: &str = "08031080d8d0ca061805";
 
     /// **Golden vector.** Pins the exact bytes a signature covers.
     ///
-    /// Because the expected values come from the previous implementation rather
-    /// than from this one, this does not merely pin the code against itself: it
-    /// proves the move out of the wasm crate preserved the preimage byte for
-    /// byte. It then fails on any future change to field order, tag numbers,
-    /// default handling, or the `TxBody` / `AuthInfo` shape.
+    /// Because the expected values do not come from this implementation, this
+    /// does not merely pin the code against itself. It fails on any change to
+    /// field order, tag numbers, default handling, or the `TxBody` /
+    /// `AuthInfo` shape, and on the request's gas limit failing to reach the
+    /// preimage.
     ///
     /// A signature is only as meaningful as the bytes it covers. If these change
     /// without every verifier changing in lockstep, existing signatures stop
@@ -266,6 +289,76 @@ mod tests {
             GOLDEN_NONCE_BYTES,
             "Nonce re-encoding drift",
         );
+    }
+
+    /// The golden `AuthInfo` is the shipped capture plus the gas declaration,
+    /// and nothing else.
+    ///
+    /// This pins the literals against each other, not the code: no change to
+    /// [`build_sign_doc`] can make it fail. [`preimage_matches_the_golden_vector`]
+    /// is what ties the literals to assembly.
+    ///
+    /// The shipped capture is what anchors the vector to bytes this code did
+    /// not produce. Holding the golden to "capture plus one field" keeps that
+    /// anchor load-bearing: a golden regenerated from current code would also
+    /// have to rewrite the captured literal, which is then visibly not a
+    /// capture.
+    #[test]
+    fn only_the_gas_field_differs_from_the_shipped_preimage() {
+        let gas_field = AuthInfo {
+            signer_infos: Vec::new(),
+            gas_limit: GOLDEN_GAS_LIMIT,
+        }
+        .encode_to_vec();
+        assert_eq!(
+            GOLDEN_AUTH_INFO_BYTES,
+            format!("{SHIPPED_AUTH_INFO_BYTES}{}", hex::encode(gas_field)),
+            "the golden AuthInfo must be the shipped capture followed by exactly the gas-limit field",
+        );
+
+        let decode = |literal: &str| {
+            AuthInfo::decode(
+                hex::decode(literal)
+                    .expect("golden literals are hex")
+                    .as_slice(),
+            )
+            .expect("golden literals decode as AuthInfo")
+        };
+        let shipped = decode(SHIPPED_AUTH_INFO_BYTES);
+        assert_eq!(
+            shipped.gas_limit, 0,
+            "the shipped capture declared no gas limit"
+        );
+        assert_eq!(
+            decode(GOLDEN_AUTH_INFO_BYTES),
+            AuthInfo {
+                gas_limit: GOLDEN_GAS_LIMIT,
+                ..shipped
+            },
+        );
+    }
+
+    /// Assembly declares exactly the gas limit the request carries, across the
+    /// valid range.
+    ///
+    /// The golden vector proves one value reaches the bytes, which an
+    /// assembly that wrote that one constant would also satisfy. The two
+    /// edges of the range and the default cannot all equal any one constant.
+    #[test]
+    fn build_sign_doc_declares_the_requested_gas_limit() {
+        for gas_limit in [TxGasLimit::MIN, crate::DEFAULT_GAS_LIMIT, TxGasLimit::MAX] {
+            let parts = build_sign_doc(&SignDocRequest {
+                gas_limit,
+                ..golden_request()
+            });
+            let auth_info = AuthInfo::decode(parts.auth_info_bytes.as_slice())
+                .expect("assembled AuthInfo must decode");
+            assert_eq!(
+                auth_info.gas_limit,
+                gas_limit.get(),
+                "the preimage must declare the requested gas limit",
+            );
+        }
     }
 
     /// The returned nonce is the one that was bound, not a look-alike.

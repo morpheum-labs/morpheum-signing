@@ -47,6 +47,23 @@ fn ts_custom_section() -> &'static str {
     &LIB_RS[start..start + len]
 }
 
+/// The text between `opener` and the first `}` in column 0 after it: the body
+/// of a top-level declaration, whose closing brace sits in column 0 in both
+/// files these pins read.
+///
+/// Panics for the same reason [`ts_custom_section`] does: a pin that cannot
+/// find its subject must fail, not pass vacuously.
+fn declaration_body(source: &'static str, opener: &str) -> &'static str {
+    let start = source
+        .find(opener)
+        .unwrap_or_else(|| panic!("`{opener}` not found — was the declaration renamed?"))
+        + opener.len();
+    let len = source[start..]
+        .find("\n}")
+        .unwrap_or_else(|| panic!("`{opener}` is never closed by a column-0 `}}`"));
+    &source[start..start + len]
+}
+
 /// Every type named by an `unchecked_return_type` / `unchecked_param_type`
 /// attribute in `bindings.rs`, in source order.
 fn unchecked_type_names() -> Vec<&'static str> {
@@ -126,5 +143,51 @@ fn every_unchecked_type_attribute_names_a_declared_interface() {
          wasm_bindgen copies the name into the .d.ts without resolving it, so this \
          ships a package that references an undeclared type.",
         undeclared.join(", "),
+    );
+}
+
+/// `buildSignDocBytes` accepts an optional `gasLimit`, and the Rust mirror of
+/// its request object reads it.
+///
+/// The two halves are pinned together because either one alone fails
+/// silently. `SignDocRequestJs` does not deny unknown fields, so a `gasLimit`
+/// the interface declares but the struct lacks is dropped without an error,
+/// and the transaction is signed with the default limit instead of the one
+/// the caller declared. A field the struct reads but the interface lacks is
+/// unreachable from TypeScript.
+#[test]
+fn sign_doc_request_declares_an_optional_gas_limit_the_binding_reads() {
+    let interface = declaration_body(ts_custom_section(), "export interface SignDocRequest {");
+    assert!(
+        interface
+            .lines()
+            .any(|line| line.trim() == "gasLimit?: bigint;"),
+        "the SignDocRequest interface must declare `gasLimit?: bigint;` — optional \
+         (absent selects the default), and a bigint because the binding reads a u64",
+    );
+
+    let mirror = declaration_body(BINDINGS_RS, "struct SignDocRequestJs {");
+    let fields: Vec<&str> = mirror.lines().map(str::trim).collect();
+    let gas_field = fields
+        .iter()
+        .position(|line| *line == "gas_limit: Option<u64>,")
+        .expect("SignDocRequestJs must read the declared gas limit as `gas_limit: Option<u64>`");
+    assert_eq!(
+        gas_field.checked_sub(1).map(|attr| fields[attr]),
+        Some("#[serde(default)]"),
+        "`gas_limit` must be `#[serde(default)]`, so a request that omits `gasLimit` \
+         deserializes rather than failing",
+    );
+
+    let (before_struct, _) = BINDINGS_RS
+        .split_once("struct SignDocRequestJs {")
+        .expect("SignDocRequestJs was found above");
+    assert!(
+        before_struct
+            .lines()
+            .rev()
+            .take_while(|line| !line.trim().is_empty() && !line.trim().starts_with("///"))
+            .any(|line| line.trim() == "#[serde(rename_all = \"camelCase\")]"),
+        "SignDocRequestJs must rename fields to camelCase, or `gas_limit` never matches `gasLimit`",
     );
 }

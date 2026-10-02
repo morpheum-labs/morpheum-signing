@@ -85,6 +85,9 @@ const TS_TYPES: &str = r#"
  * because absent and default are genuinely the same statement for those
  * three — an absent `genesisHash` produces a preimage that binds no chain
  * instance (see `genesisHash` below).
+ * `gasLimit` is optional for a different reason: an absent (or `null`) one
+ * declares the SDK's default gas limit, itself a valid declaration, while a
+ * supplied number is never replaced.
  */
 export interface SignDocRequest {
     /** Protobuf type URL (e.g. "/bucket.v1.MsgCreateBucketRequest"). */
@@ -116,6 +119,17 @@ export interface SignDocRequest {
      * verify, because it is the one the signature covers.
      */
     nonce: Uint8Array;
+    /**
+     * Gas limit to declare in `AuthInfo.gas_limit`, which the signature covers.
+     * Absent (or `null`) declares the SDK default, sized for native-module
+     * messages with a fixed cost. A contract (VM) message, or one whose cost
+     * grows with the work it does, can need more and must then declare it.
+     * Every declared unit is reserved against the block's gas budget whether
+     * used or not, so declare what the transaction needs. Must be at least 1
+     * and at most the chain's per-transaction gas budget: anything else is an
+     * error, never replaced by the default.
+     */
+    gasLimit?: bigint;
 }
 
 /**
