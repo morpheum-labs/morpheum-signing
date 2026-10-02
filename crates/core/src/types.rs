@@ -164,7 +164,7 @@ impl PublicKey {
     ///
     /// # Errors
     ///
-    /// Returns [`SigningError::Crypto`] if the type_url is unrecognized or the
+    /// Returns [`SigningError::Crypto`](crate::SigningError::Crypto) if the type_url is unrecognized or the
     /// key bytes have an invalid length for the identified curve.
     pub fn from_proto_any(any: &crate::proto::Any) -> Result<Self, crate::error::SigningError> {
         use crate::error::{CryptoError, SigningError};
@@ -337,7 +337,7 @@ impl SignedTx {
     ///
     /// # Errors
     ///
-    /// Returns [`SigningError::ProtoDecode`] if the bytes cannot be decoded.
+    /// Returns [`SigningError::ProtoDecode`](crate::SigningError::ProtoDecode) if the bytes cannot be decoded.
     pub fn decode(raw_bytes: &[u8]) -> Result<Self, crate::error::SigningError> {
         use prost::Message;
 

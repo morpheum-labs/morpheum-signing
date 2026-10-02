@@ -134,7 +134,7 @@ impl Signer for SolanaSigner {
     /// # Constant-Time Guarantees
     ///
     /// Uses `ed25519-dalek` which performs constant-time signing with respect to
-    /// the secret key material. See [`NativeSigner::sign`] for details.
+    /// the secret key material. See [`NativeSigner`](super::NativeSigner) for details.
     async fn sign(&self, sign_doc: &SignDoc) -> Result<Signature, SigningError> {
         let bytes = sign_doc.encode_to_vec();
         let signature = self.signing_key.sign(&bytes);

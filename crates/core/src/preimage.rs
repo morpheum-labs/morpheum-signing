@@ -74,7 +74,7 @@ pub struct SignDocRequest {
     /// be replayed onto another sharing a `chain_id`. `None` binds no chain
     /// instance; supply it whenever the target chain is known.
     pub genesis_hash: Option<Vec<u8>>,
-    /// The nonce this preimage binds. Returned in [`SignDocParts::nonce`] so
+    /// The nonce this preimage binds. Returned in [`SignDocParts::nonce_bytes`] so
     /// the caller stamps the value the signature actually covered.
     pub nonce: Nonce,
 }
