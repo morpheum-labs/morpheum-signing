@@ -184,6 +184,7 @@ use morpheum_signing_native::prelude::*;
 
 let signed_tx = native(signer)
     .chain_id("morpheum-1")
+    .with_genesis_hash(genesis_hash) // from operator configuration
     .add_message(contract_call_any)
     .gas_limit(TxGasLimit::new(needed_gas)?)
     .sign()
