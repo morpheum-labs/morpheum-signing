@@ -1,7 +1,7 @@
 //! SentryNonceProvider — Concrete nonce strategy for human/sequential mode.
 //!
 //! Fetches the nonce state from the real Morpheum endpoint:
-//!     GET /auth/v1/nonce-state?address=<hex>
+//! `GET /auth/v1/nonce-state?address=<hex>`
 //!
 //! Then computes the next canonical `tx.v1.Nonce` for `SIGN_MODE_DIRECT`
 //! (sequential monotonic for MetaMask/EVM compatibility).

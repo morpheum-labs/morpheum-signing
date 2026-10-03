@@ -62,7 +62,7 @@ full-crypto = ["native", "evm", "solana", "bitcoin"]
 # BIP-39 mnemonic derivation
 bip39 = ["dep:bip39"]
 
-# Forward audit-driven features to core
+# Forward SignerInfo / TradingKeyClaim features to core
 claim-verification = ["morpheum-signing-core/claim-verification"]
 dynamic-signer-info = ["morpheum-signing-core/dynamic-signer-info"]
 

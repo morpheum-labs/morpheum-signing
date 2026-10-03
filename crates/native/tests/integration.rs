@@ -6,8 +6,8 @@
 //! - Agent signer (TradingKey + VC claims)
 //! - Multi-chain address mapping
 //! - EVM / Solana / Bitcoin signing flows
-//! - Dynamic signer info (audit Critical Issue #1)
-//! - TradingKeyClaim verification & encoding (audit Critical Issue #2)
+//! - Dynamic signer info (key type and sign mode derived from the signer)
+//! - TradingKeyClaim verification & encoding
 //! - Error handling and edge cases
 //! - Security properties
 //! - Cross-crate integration (cryptogram ↔ signing)

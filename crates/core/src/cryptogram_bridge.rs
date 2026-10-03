@@ -92,7 +92,7 @@ pub mod nonce_mgmt {
 
 // ==================== TYPE CONVERSIONS ====================
 
-/// Maps a signing SDK [`WalletType`] to the canonical cryptogram [`SigType`].
+/// Maps a signing SDK [`WalletType`] to the canonical cryptogram [`SigType`](mst::SigType).
 ///
 /// This is the primary bridge between the signing SDK's wallet abstraction
 /// and cryptogram's algorithm-level dispatch.
@@ -109,7 +109,7 @@ pub const fn wallet_type_to_sig_type(wt: WalletType) -> mst::SigType {
     }
 }
 
-/// Maps a cryptogram [`SigType`] to the signing SDK's [`WalletType`].
+/// Maps a cryptogram [`SigType`](mst::SigType) to the signing SDK's [`WalletType`].
 ///
 /// Returns `None` for signature types that don't have a direct wallet mapping
 /// (e.g. chain-specific legacy variants, hybrid post-quantum).

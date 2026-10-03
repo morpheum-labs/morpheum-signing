@@ -51,25 +51,20 @@ pub fn version() -> String {
 ///
 /// # Why the rule is absolute
 ///
-/// This section used to re-declare `buildSignDocBytes`, `TxBuilderWasm` and
-/// `VcClaimBuilder` by hand, and all three drifted from the Rust they claimed
-/// to describe. TypeScript does not report that as a conflict — it *merges* it,
-/// and the two merge modes are each a distinct failure:
+/// A hand-written copy of a generated declaration drifts from the Rust it
+/// describes, and TypeScript does not report that as a conflict — it *merges*
+/// it, and the two merge modes are each a distinct failure:
 ///
-/// - **Functions become an overload set.** The stale eight-parameter
-///   `buildSignDocBytes` declaration outlived the fix that made `nonce`
-///   required, and TypeScript happily resolved eight-argument calls against it.
-///   So the compile error that was supposed to make a nonce-less preimage
-///   unrepresentable did not exist in the shipped package: a caller could still
-///   sign without binding a nonce, exactly the defect this crate closed. The
-///   declaration was the whole guard, and it silently was not one.
-/// - **Classes collide outright** (`TS2300: Duplicate identifier`), which made
-///   the package's own `.d.ts` invalid TypeScript and forced every consumer to
-///   set `skipLibCheck: true` — which is precisely what stopped anyone from
-///   seeing the overload above.
+/// - **Functions become an overload set.** A stale declaration with fewer
+///   parameters keeps type-checking calls the real function rejects, so a
+///   required parameter (such as `nonce`) stops being enforced by the
+///   compiler.
+/// - **Classes collide outright** (`TS2300: Duplicate identifier`), which makes
+///   the package's own `.d.ts` invalid TypeScript and pushes every consumer to
+///   set `skipLibCheck: true` — which in turn hides the overload problem above.
 ///
-/// One root cause, two defects, and the second hid the first. A generated
-/// declaration cannot go stale; a hand-written copy of one always can.
+/// A generated declaration cannot go stale; a hand-written copy of one always
+/// can.
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
@@ -82,17 +77,14 @@ const TS_TYPES: &str = r#"
 /**
  * Everything `buildSignDocBytes` binds into a signing preimage.
  *
- * One named object rather than ten positional parameters. This crate's
- * defining defect was a ten-argument call made with eight: the trailing
- * `genesisHash` and `nonce` defaulted away, so every transaction shipped a
- * replay-protection field no signature covered, rewritable by any observer. A
- * missing field here is a TypeScript error; a missing trailing argument was a
- * security downgrade that compiled.
+ * One named object rather than ten positional parameters, so a missing field
+ * is a TypeScript error rather than a silently defaulted trailing argument.
  *
- * `nonce` is required for exactly that reason. `memo`, `accountNumber` and
- * `genesisHash` are optional because absent and default are genuinely the same
- * statement for those three — an absent `genesisHash` is the pre-fork unbound
- * posture, which verifiers still accept while the binding is advisory.
+ * `nonce` is required: the signature must cover the exact nonce the
+ * transaction carries. `memo`, `accountNumber` and `genesisHash` are optional
+ * because absent and default are genuinely the same statement for those
+ * three — an absent `genesisHash` produces a preimage that binds no chain
+ * instance (see `genesisHash` below).
  * `gasLimit` is optional for a different reason: an absent (or `null`) one
  * declares the SDK's default gas limit, itself a valid declaration, while a
  * supplied number is never replaced.
@@ -115,9 +107,10 @@ export interface SignDocRequest {
     /** Optional account number; defaults to 0. */
     accountNumber?: bigint;
     /**
-     * The target chain's 32-byte genesis hash (Phase M3), which stops a
-     * signature valid on one chain being replayed onto another sharing its
-     * `chainId`. Optional while the strict genesis fork is advisory.
+     * The target chain's 32-byte genesis hash, which stops a signature valid
+     * on one chain being replayed onto another sharing its `chainId`. Omit it
+     * only if you accept a signature that binds no chain instance; take it
+     * from operator configuration, never from the node you submit to.
      */
     genesisHash?: Uint8Array;
     /**
@@ -144,9 +137,8 @@ export interface SignDocRequest {
  *
  * `nonce` is the encoding the preimage actually bound, and it is on this
  * interface for the same reason the parameter is required: the caller must
- * stamp *this* value onto `Tx.nonce`. Minting a fresh one at assembly time
- * ships a replay-protection field no signature covers, which is rewritable by
- * any observer.
+ * stamp *this* value onto `Tx.nonce` — it is the only nonce the signature
+ * covers.
  */
 export interface SignDocBytes {
     /** SignDoc proto-encoded bytes — the signing preimage. */

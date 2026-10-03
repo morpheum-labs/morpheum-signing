@@ -214,11 +214,10 @@ fn test_signed_tx_accessors() {
             timeout_timestamp: None,
             priority_tip: String::new(),
             // The accessors under test do not read either field, so
-            // both take the value a pre-23A / pre-22X.5.D peer implies
-            // by omitting them: `Standard` ordering, non-urgent
-            // routing. Named rather than a bare `0` so a re-numbering
-            // of the class encoding does not silently re-target this
-            // fixture.
+            // both take the value omitting them implies: `Standard`
+            // ordering, non-urgent. Named rather than a bare `0` so a
+            // re-numbering of the class encoding does not silently
+            // re-target this fixture.
             tx_class: TxClass::Standard.to_wire(),
             urgent: false,
         }),

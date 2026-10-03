@@ -51,7 +51,7 @@ uuid = { version = "1", features = ["js"] }
 [features]
 default = ["full-wasm"]
 
-# Full WASM feature set (audit-driven capabilities + panic hook)
+# Full WASM feature set (claim verification, dynamic SignerInfo, panic hook)
 full-wasm = [
     "console_error_panic_hook",
     "morpheum-signing-core/claim-verification",
