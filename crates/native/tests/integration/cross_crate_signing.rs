@@ -407,8 +407,8 @@ async fn test_evm_sign_verify_roundtrip() {
 ///
 /// `keccak: true` signs the Keccak-256 digest of the `SignDoc` — the mode's
 /// documented Ethereum convention. `keccak: false` deliberately signs the
-/// SHA-256 hash while still declaring `Keccak256`, reproducing the defect the
-/// verifier's split arms guard against.
+/// SHA-256 hash while still declaring `Keccak256` — the mismatch the
+/// verifier's separate digest arms must reject.
 struct KeccakModeSigner {
     signing_key: k256::ecdsa::SigningKey,
     keccak: bool,
@@ -467,11 +467,10 @@ impl Signer for KeccakModeSigner {
 /// `SignMode::Keccak256` end-to-end: the mode routes to Keccak-256 digest
 /// verification, and only Keccak-signed signatures satisfy it.
 ///
-/// The rejection case is the regression guard for the original defect:
-/// `Keccak256` was bundled into the SHA-256 verify arm, so a SHA-256-signed
-/// tx declaring `Keccak256` verified successfully while a correct
-/// Ethereum-convention signer was rejected. Re-merging the arms fails the
-/// second assertion.
+/// The rejection case pins that the two digest schemes are verified on
+/// separate arms: a SHA-256-signed tx declaring `Keccak256` must be rejected
+/// while a correct Ethereum-convention signer is accepted. Merging the arms
+/// fails the second assertion.
 #[tokio::test]
 async fn test_keccak256_mode_routes_to_keccak_digest_verification() {
     let msg = payload_to_any(

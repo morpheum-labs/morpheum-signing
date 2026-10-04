@@ -101,6 +101,10 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo test
         run: cargo test --workspace --all-features
+      - name: cargo doc
+        run: cargo doc --no-deps --workspace --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
       - name: cargo clippy (wasm32 — the target crates/wasm actually ships to)
         # Every step above builds for the host, and `crates/wasm/src/lib.rs`
         # carries `#![cfg(target_arch = "wasm32")]`. On the host it is an EMPTY

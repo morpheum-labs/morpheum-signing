@@ -9,8 +9,8 @@
 //!
 //! It used to live in `morpheum-signing-wasm`, which is
 //! `#![cfg(target_arch = "wasm32")]` — an empty crate on the host, so nothing
-//! any host CI runs could compile it, let alone test it. That is how an arity
-//! break reached `main` once already. Preimage assembly decides what a
+//! any host CI runs could compile it, let alone test it. Preimage assembly
+//! decides what a
 //! signature covers; it is the last thing that should be invisible to the test
 //! runner.
 //!
@@ -20,13 +20,11 @@
 //!
 //! # Why a struct rather than parameters
 //!
-//! The wasm entry point took ten positional parameters, and this crate's
-//! defining defect was a ten-parameter call made with eight arguments: the
-//! trailing `genesis_hash` and `nonce` silently defaulted, so every transaction
-//! shipped a nonce no signature covered. A missing field on a named struct is a
-//! compile error; a missing trailing argument is a security downgrade. Rust
-//! also has no default-argument rule to rescue the positional form, which is
-//! why `clippy::too_many_arguments` fires on it at 10/7.
+//! The request has ten inputs. As positional parameters, a call that omits
+//! trailing ones (`genesis_hash`, `nonce`) can silently default them across a
+//! JS boundary; a missing field on a named struct is a compile error instead.
+//! Rust also has no default-argument rule to rescue the positional form, which
+//! is why `clippy::too_many_arguments` fires on it at 10/7.
 
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -48,10 +46,9 @@ const CHAIN_TYPE_ETHEREUM: i32 = 1;
 ///
 /// Every field is required. `memo` and `genesis_hash` are `Option` because
 /// absent and empty are the same statement *for those two only* — an omitted
-/// memo and an empty memo encode identically, and an absent genesis hash is the
-/// pre-fork unbound posture. `nonce` is deliberately **not** optional: omitting
-/// it is what produced a signature that did not cover the replay-protection
-/// field the transaction shipped.
+/// memo and an empty memo encode identically, and an absent genesis hash binds
+/// no chain instance. `nonce` is deliberately **not** optional: the signature
+/// must cover the exact nonce the transaction carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignDocRequest {
     /// Proto type URL of the single message this transaction carries.
@@ -74,11 +71,11 @@ pub struct SignDocRequest {
     pub memo: Option<String>,
     /// Account number bound into the preimage.
     pub account_number: u64,
-    /// Genesis hash (Phase M3 — audit `O20` / `C12`) binding the signature to
-    /// one chain instance, so it cannot be replayed onto another sharing a
-    /// `chain_id`. `None` is the pre-fork unbound posture.
+    /// Genesis hash binding the signature to one chain instance, so it cannot
+    /// be replayed onto another sharing a `chain_id`. `None` binds no chain
+    /// instance; supply it whenever the target chain is known.
     pub genesis_hash: Option<Vec<u8>>,
-    /// The nonce this preimage binds. Returned in [`SignDocParts::nonce`] so
+    /// The nonce this preimage binds. Returned in [`SignDocParts::nonce_bytes`] so
     /// the caller stamps the value the signature actually covered.
     pub nonce: Nonce,
     /// The gas limit the transaction declares in `AuthInfo.gas_limit`.
@@ -168,8 +165,7 @@ pub fn build_sign_doc(request: &SignDocRequest) -> SignDocParts {
 
     // Assembled through the preimage SSOT in `morpheum-primitives` so browser
     // and native signers produce byte-identical preimages. There is no other
-    // way to compute these bytes, which is the gate closing audit row C12 /
-    // gap O20: no call site can silently drop a binding.
+    // way to compute these bytes, so no call site can silently drop a binding.
     let sign_doc_bytes = sign_doc_signing_bytes(
         body_bytes.clone(),
         auth_info_bytes.clone(),
@@ -383,9 +379,9 @@ mod tests {
     /// Binding a genesis hash changes the preimage, and `None` is not the same
     /// as `Some(vec![])`-that-encodes-to-nothing by accident.
     ///
-    /// An unbound and a bound signature must not collide: if they did, the
-    /// strict genesis fork would be unenforceable because the two rungs would
-    /// be the same byte string.
+    /// An unbound and a bound signature must not collide: if they did, a
+    /// verifier requiring the genesis binding could not tell them apart,
+    /// because the two preimages would be the same byte string.
     #[test]
     fn genesis_binding_changes_the_preimage() {
         let bound = build_sign_doc(&golden_request());
@@ -401,8 +397,8 @@ mod tests {
 
         // `None` and an explicitly empty hash are the same posture — both mean
         // "binds no genesis" — so they must produce identical bytes. A verifier
-        // builds its unbound rung from an empty slice; if these differed, a
-        // client passing `Some(vec![])` would sign something no rung matches.
+        // builds its unbound preimage from an empty slice; if these differed, a
+        // client passing `Some(vec![])` would sign something no preimage matches.
         let empty = build_sign_doc(&SignDocRequest {
             genesis_hash: Some(Vec::new()),
             ..golden_request()

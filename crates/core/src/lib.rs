@@ -69,7 +69,7 @@ pub use cryptogram_crypto;
 /// - `proto::identity::v1::AgentId`
 pub use morpheum_primitives::pb as proto;
 
-/// Phase 23A semantics-tier re-export so downstream crates (e.g.
+/// Semantics-tier re-export so downstream crates (e.g.
 /// `morpheum-sdk-core`) can declare a transaction's
 /// [`morpheum_primitives::tx_class::TxClass`] via the builder without
 /// taking a direct primitives dependency.

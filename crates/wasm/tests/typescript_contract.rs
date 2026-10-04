@@ -13,16 +13,12 @@
 //! to describe the *interior* of values typed `JsValue`, which `wasm_bindgen`
 //! can render no better than `any`. Those two roles must not overlap.
 //!
-//! When they did, TypeScript did not report a conflict — it merged, and each
-//! merge mode was its own defect. A stale by-hand `buildSignDocBytes`
-//! declaration became an **overload**, so the eight-argument call that
-//! `nonce: Vec<u8>` was made non-optional to forbid still compiled: the
-//! signature covered a nonce-less preimage while a fabricated nonce went on the
-//! wire, rewritable by any observer. By-hand `TxBuilderWasm` / `VcClaimBuilder`
-//! classes collided outright (`TS2300`), which made the package's own `.d.ts`
-//! invalid and forced consumers onto `skipLibCheck: true` — which is exactly
-//! what kept anyone from seeing the overload. One root cause, two defects, and
-//! the second concealed the first.
+//! If they overlap, TypeScript does not report a conflict — it merges, and each
+//! merge mode is its own failure. A stale by-hand function declaration becomes
+//! an **overload**, so a call missing a required parameter (such as `nonce`)
+//! still compiles. A by-hand class declaration collides outright (`TS2300`),
+//! which makes the package's own `.d.ts` invalid and pushes consumers onto
+//! `skipLibCheck: true` — which in turn hides the overload.
 //!
 //! Neither is reachable while these two pins hold.
 

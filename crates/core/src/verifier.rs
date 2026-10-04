@@ -118,8 +118,9 @@ pub struct VerifiedTx {
 /// - The transaction is missing required fields (`body`, `auth_info`).
 /// - Signer count mismatches signature count.
 /// - Any signature verifies under none of the accepted preimages.
-/// - A binding would be vacuous (strict fork with an unset genesis hash, or a
-///   transaction carrying no nonce under the strict nonce fork).
+/// - A binding `ctx` requires would be vacuous (genesis binding required but
+///   `ctx` carries no genesis hash, or nonce binding required but the
+///   transaction carries no nonce).
 /// - A `TradingKeyClaim` is malformed, expired, or has issuer mismatch.
 pub fn verify_signed_tx(
     signed_tx: &SignedTx,
@@ -165,7 +166,7 @@ pub fn verify_signed_tx(
 
     // The accepted preimages come from the policy SSOT in `morpheum-primitives`,
     // the same function `crypto::verify_tx` uses. Both verifiers run on the same
-    // admission path for the same node, so a hand-copied ladder here could drift
+    // admission path for the same node, so a hand-copied list here could drift
     // across the repo boundary and leave the two disagreeing about which
     // signatures are valid — a chain split, not a lint.
     let ladder = accepted_preimages(
@@ -194,9 +195,9 @@ pub fn verify_signed_tx(
         // 2. Determine sign mode from mode_info
         let mode = extract_sign_mode(si);
 
-        // 3. Cryptographic signature verification, strictest rung first so a
-        //    fully bound signer costs exactly one verification and never
-        //    touches the advisory fallbacks.
+        // 3. Cryptographic signature verification, strictest accepted preimage
+        //    first so a fully bound signer costs exactly one verification and
+        //    never reaches the weaker accepted preimages.
         let mut verified = false;
         let mut strictest_err = None;
         for (_, preimage) in &ladder {

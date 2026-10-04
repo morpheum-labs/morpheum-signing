@@ -46,11 +46,9 @@ pub enum SigningError {
     /// `sign()` was called without a target genesis hash.
     ///
     /// The signing preimage binds the chain's genesis hash so a signature valid
-    /// on one chain cannot be replayed onto another sharing its `chain_id`
-    /// (Phase M3 — audit `O20` / row `C12`). An unset hash produces a signature
-    /// that verifiers still accept, on the weaker `GenesisUnbound` rung — so
-    /// forgetting it is not a build failure, it is a silent downgrade to a
-    /// weaker security posture. This variant makes it loud instead.
+    /// on one chain cannot be replayed onto another sharing its `chain_id`.
+    /// Without a hash the preimage would bind no chain instance, so `sign()`
+    /// refuses to build it and returns this variant instead.
     ///
     /// Fix it by configuring the hash, never by fetching one: a client that
     /// asked its RPC endpoint and signed against the answer would let whoever
