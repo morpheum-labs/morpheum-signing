@@ -76,11 +76,6 @@ pub enum SigningError {
     #[error("signing failed: {0}")]
     Signing(String),
 
-    /// I/O error (only available with `std` feature — e.g., file-based key loading).
-    #[cfg(feature = "std")]
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
     /// Custom error for rare cases (used internally or by extensions).
     #[error("custom error: {0}")]
     Custom(String),

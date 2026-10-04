@@ -10,7 +10,7 @@
 //! agent SDK before signing. The chain-side auth hot-path performs authoritative
 //! cryptographic verification.
 //!
-//! Requires features: `claim-verification`, `bip39` (both included in `full`).
+//! Builds with the crate's default features (`full`).
 
 use morpheum_signing_native::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -68,15 +68,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // In production, full cryptographic signature verification is performed
     // chain-side. The SDK provides the digest via claim_digest() for
     // optional offline verification.
-    #[cfg(feature = "claim-verification")]
-    {
-        match claim.verify(now_secs, &issuer_pubkey) {
-            Ok(()) => println!("  Claim verification: PASSED"),
-            Err(e) => {
-                println!("  Claim verification: FAILED — {e}");
-                // In production, you would abort here.
-                // For this example, we continue to demonstrate the full flow.
-            }
+    match claim.verify(now_secs, &issuer_pubkey) {
+        Ok(()) => println!("  Claim verification: PASSED"),
+        Err(e) => {
+            println!("  Claim verification: FAILED — {e}");
+            // In production, you would abort here.
+            // For this example, we continue to demonstrate the full flow.
         }
     }
 

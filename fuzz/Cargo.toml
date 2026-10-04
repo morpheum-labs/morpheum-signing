@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-morpheum-signing-core = { path = "../crates/core", features = ["std", "claim-verification", "dynamic-signer-info"] }
+morpheum-signing-core = { path = "../crates/core" }
 morpheum-signing-native = { path = "../crates/native", features = ["full"] }
 arbitrary = { version = "1", features = ["derive"] }
 

@@ -12,7 +12,7 @@ description = "WASM + TypeScript bindings for Morpheum Signing SDK (browser supp
 crate-type = ["cdylib"]
 
 [dependencies]
-morpheum-signing-core = { path = "../core", default-features = false, features = ["std", "wasm"] }
+morpheum-signing-core = { path = "../core" }
 morpheum-signing-wasm-lib = { path = "../wasm-lib" }
 
 # Protobuf encoding (SignDoc::encode_to_vec, Any)
@@ -51,12 +51,8 @@ uuid = { version = "1", features = ["js"] }
 [features]
 default = ["full-wasm"]
 
-# Full WASM feature set (claim verification, dynamic SignerInfo, panic hook)
-full-wasm = [
-    "console_error_panic_hook",
-    "morpheum-signing-core/claim-verification",
-    "morpheum-signing-core/dynamic-signer-info",
-]
+# Full WASM feature set (panic hook)
+full-wasm = ["console_error_panic_hook"]
 
 # Cryptogram integration (forwards to core)
 cryptogram = ["morpheum-signing-core/cryptogram"]

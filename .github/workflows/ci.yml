@@ -125,3 +125,18 @@ jobs:
         # adds `cryptogram` with the same problem — both would gate a
         # configuration nobody can ship.
         run: cargo clippy --target wasm32-unknown-unknown -p morpheum-signing-wasm --lib -- -D warnings
+      - name: cargo clippy (morpheum-signing-core alone, per feature set)
+        # The workspace steps above unify every member's features, so they
+        # never build the core crate the way a dependent naming fewer features
+        # does. Build it bare and with each optional capability on its own.
+        run: |
+          set -euo pipefail
+          for features in "" full-crypto cryptogram; do
+            echo "::group::features=[${features}]"
+            cargo clippy -p morpheum-signing-core --all-targets --no-default-features --features "$features" -- -D warnings
+            echo "::endgroup::"
+          done
+      - name: cargo check (fuzz workspace)
+        # fuzz/ is its own workspace, so no step above resolves its manifest
+        # or compiles its targets.
+        run: cargo check --manifest-path fuzz/Cargo.toml

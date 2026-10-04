@@ -6,26 +6,25 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Core no_std library for Morpheum universal signing (traits, types, TxBuilder)"
+description = "Core library for Morpheum universal signing (traits, types, TxBuilder)"
 
 [lib]
 crate-type = ["lib"]
 
 [features]
 default = []
-# Enables std support (required for native and some WASM features)
-std = ["prost/std", "zeroize/std"]
-# Enables WASM-specific bindings (tsify, wasm-bindgen)
-wasm = ["wasm-bindgen", "tsify"]
-# Dynamic SignerInfo based on signer type
+# Transitional: these four enable nothing. Dependent manifests still name
+# them; delete each once no dependent lists it. The crate always requires std,
+# always derives SignerInfo from the signer, and always verifies a claim's issuer.
+std = []
+wasm = []
 dynamic-signer-info = []
-# TradingKeyClaim embedding & verification
 claim-verification = []
 # Full cryptographic verification (ed25519 + secp256k1 + keccak256) for chain-side verifier
 full-crypto = ["dep:ed25519-dalek", "dep:k256", "dep:sha3"]
 # Cryptogram integration: universal signing, HD derivation, address validation,
-# agent delegation, EIP-712 support. Requires std.
-cryptogram = ["std", "dep:morpheum-crypto", "dep:cryptogram-crypto"]
+# agent delegation, EIP-712 support.
+cryptogram = ["dep:morpheum-crypto", "dep:cryptogram-crypto"]
 
 [dependencies]
 morpheum-primitives = { workspace = true }
@@ -51,11 +50,6 @@ morpheum-crypto = { workspace = true, optional = true }
 # Explicit dependency on cryptogram-crypto for supply-chain visibility
 # (`cargo audit`, `cargo tree`) and direct re-export of low-level primitives.
 cryptogram-crypto = { workspace = true, optional = true }
-
-# WASM support (optional)
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { workspace = true, optional = true }
-tsify = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

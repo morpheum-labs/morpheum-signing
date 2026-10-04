@@ -6,7 +6,6 @@
 //!
 //! Design: Builder Pattern + Generics over `Signer` for zero-cost abstraction.
 
-use alloc::vec::Vec;
 use core::fmt;
 
 use prost::Message;
@@ -406,9 +405,8 @@ impl<S: Signer> TxBuilder<S> {
 
         // 3. Build AuthInfo + SignerInfo
         //
-        // With `dynamic-signer-info`: public key and sign mode are derived from
-        // the signer's actual key type.
-        // Without: falls back to legacy hardcoded ed25519 for backward compat.
+        // The public key and sign mode are the signer's own, so the SignerInfo
+        // always describes the key that produced the signature.
 
         // Auto-derive trading_key_address from TradingKeyClaim.subject when
         // the caller hasn't set it explicitly. The subject IS the trading key.
@@ -418,32 +416,11 @@ impl<S: Signer> TxBuilder<S> {
                 .map(|c| hex::encode(c.subject.0))
         });
 
-        #[cfg(feature = "dynamic-signer-info")]
         let mut signer_info = SignerInfo {
             public_key: Some(self.signer.public_key_proto()),
             mode_info: Some(ModeInfo {
                 sum: Some(tx::mode_info::Sum::Single(tx::mode_info::Single {
                     mode: self.signer.sign_mode() as i32,
-                })),
-            }),
-            chain_type: 0,
-            deadline: self.signing_options.deadline_seconds.unwrap_or(0),
-            signing_options: None,
-            timestamp: None,
-            agent_did: self.agent_did,
-            verifiable_presentation: self.verifiable_presentation,
-            trading_key_address,
-        };
-
-        #[cfg(not(feature = "dynamic-signer-info"))]
-        let mut signer_info = SignerInfo {
-            public_key: Some(crate::proto::Any {
-                type_url: "/morpheum.crypto.ed25519.PubKey".to_string(),
-                value: Vec::new(),
-            }),
-            mode_info: Some(ModeInfo {
-                sum: Some(tx::mode_info::Sum::Single(tx::mode_info::Single {
-                    mode: tx::SignMode::Ed25519 as i32,
                 })),
             }),
             chain_type: 0,
@@ -461,14 +438,11 @@ impl<S: Signer> TxBuilder<S> {
         // signature presence) and then serialized into the `SignerInfo.signing_options`
         // field, where verifiers extract it and verify it cryptographically.
         if let Some(ref claim) = self.trading_key_claim {
-            #[cfg(feature = "std")]
-            {
-                let now_secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                claim.validate(now_secs)?;
-            }
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            claim.validate(now_secs)?;
 
             let claim_any = claim.to_proto_any();
             signer_info.signing_options = Some(tx::SigningOptions {
@@ -563,7 +537,7 @@ mod tests {
     /// `body.priority_tip` round-trip assertion. Defined locally so the
     /// `core` crate's `#[cfg(test)]` module stays self-contained (no
     /// dev-dep on `morpheum-signing-native`, which would create a
-    /// workspace-cycle in the no_std core layer).
+    /// workspace-cycle in the core layer).
     struct StubSigner;
 
     #[cfg_attr(not(target_arch = "wasm32"), async_trait)]

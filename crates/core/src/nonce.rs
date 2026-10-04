@@ -5,7 +5,7 @@
 //! - `AgentPortal` (monotonic + `ts_ms` + sub-range for AI agents with `TradingKey` VC)
 //!
 //! Concrete implementations live in the `native` crate.
-//! This core trait is `no_std` compatible and object-safe.
+//! This core trait is object-safe.
 
 use async_trait::async_trait;
 

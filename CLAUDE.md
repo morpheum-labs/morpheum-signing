@@ -4,7 +4,7 @@
 Universal multi-chain signing SDK for the Morpheum L1: one fluent `TxBuilder` producing
 exact `Tx`/`SignDoc`/`TxRaw` bytes across native ed25519, EVM (secp256k1), Solana
 (ed25519), and Bitcoin Taproot (BIP-340), plus TradingKey/VC delegation for autonomous
-agents. `no_std` core; all secret material is `ZeroizeOnDrop`.
+agents. All secret material is `ZeroizeOnDrop`.
 
 **This repo is PUBLIC on GitHub.** Everything committed here is public content. Do not add
 internal architecture detail about private sibling repos beyond their names and build
@@ -12,11 +12,12 @@ requirements.
 
 ## Layout
 
-- `crates/core` — `no_std` heart: builder, preimage construction, claims, nonce, verifier
+- `crates/core` — the heart: builder, preimage construction, claims, nonce, verifier
 - `crates/native` — adapters/providers/signers for native targets
 - `crates/wasm-lib` — shared wallet adapters reused by wasm builds
 - `crates/wasm` — wasm-bindgen package + TS bindings (published surface for TS consumers)
-- `fuzz/` — seed generation, claim construction/encoding, address mapping targets (nightly)
+- `fuzz/` — seed generation, claim construction/encoding, address mapping targets (own
+  workspace; CI compiles them on stable, running them needs nightly `cargo-fuzz`)
 
 ## Commands `[host]`
 
@@ -25,6 +26,8 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo clippy --target wasm32-unknown-unknown -p morpheum-signing-wasm --lib -- -D warnings
+for f in "" full-crypto cryptogram; do cargo clippy -p morpheum-signing-core --all-targets --no-default-features --features "$f" -- -D warnings; done
+cargo check --manifest-path fuzz/Cargo.toml
 wasm-pack build crates/wasm --target nodejs --out-dir pkg-node   # the package TS consumes
 ```
 
@@ -81,9 +84,11 @@ This repo builds on the host (pure Rust). Requires sibling checkouts (see ripple
 
 ## Verification
 
-- CI = fmt + clippy (native and wasm32 legs) + `cargo test --workspace --all-features`.
-  Run all four locally or say which you skipped.
-- Fuzz targets live in their own nightly workspace under `fuzz/` — run when touching seed
-  generation, claim encoding, or address mapping.
+- CI = fmt + clippy (native and wasm32 legs) + `cargo test --workspace --all-features` +
+  the core crate alone under each of its real feature sets + the fuzz workspace check.
+  Run them all locally or say which you skipped.
+- Fuzz targets live in their own workspace under `fuzz/`. CI only compiles them (stable);
+  running them needs nightly `cargo-fuzz` — run them when touching seed generation, claim
+  encoding, or address mapping.
 - `.claude/rules/signing-invariants.md` restates the invariants above for path-scoped
   review.

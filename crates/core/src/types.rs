@@ -1,7 +1,6 @@
 //! Core types for morpheum-signing.
 //!
-//! This crate is deliberately `no_std` + minimal to support WASM and embedded use.
-//! All protobuf types come exclusively from the published morpheum-primitives crate.
+//! All protobuf types come exclusively from the sibling morpheum-primitives crate.
 
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -17,8 +16,6 @@ use crate::proto::tx::v1 as tx;
 /// Using hex encoding also produces human-readable output, which is the
 /// standard format for cryptographic keys and signatures.
 mod hex_bytes {
-    use alloc::string::String;
-    use alloc::vec::Vec;
     use serde::{de, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer, const N: usize>(
@@ -50,8 +47,7 @@ pub use tx::{
 pub use crate::proto::Any;
 
 /// Canonical `AccountId` used throughout Morpheum (blake3 hash of address).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "std", derive(Zeroize, ZeroizeOnDrop))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct AccountId(pub [u8; 32]);
 
 impl AccountId {
@@ -199,7 +195,7 @@ impl PublicKey {
                     .map_err(|_| SigningError::Crypto(CryptoError::InvalidPublicKeyLength))?;
                 Ok(Self::Schnorr(bytes))
             }
-            url => Err(SigningError::signing(alloc::format!(
+            url => Err(SigningError::signing(format!(
                 "unsupported public key type_url: {url}"
             ))),
         }
@@ -386,7 +382,6 @@ impl SignedTx {
     }
 
     /// Convenience: txhash (sha256 of `raw_bytes`) as hex.
-    #[cfg(feature = "std")]
     #[must_use]
     pub fn txhash_hex(&self) -> String {
         let hash = Sha256::digest(&self.raw_bytes);
