@@ -13,13 +13,6 @@ crate-type = ["lib"]
 
 [features]
 default = []
-# Transitional: these four enable nothing. Dependent manifests still name
-# them; delete each once no dependent lists it. The crate always requires std,
-# always derives SignerInfo from the signer, and always verifies a claim's issuer.
-std = []
-wasm = []
-dynamic-signer-info = []
-claim-verification = []
 # Full cryptographic verification (ed25519 + secp256k1 + keccak256) for chain-side verifier
 full-crypto = ["dep:ed25519-dalek", "dep:k256", "dep:sha3"]
 # Cryptogram integration: universal signing, HD derivation, address validation,
