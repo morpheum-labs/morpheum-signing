@@ -1,0 +1,13 @@
+repo_root=/agent/repos/morpheum-signing
+sibling_cryptogram=present
+sibling_morpheum-primitives=present
+sibling_morpheum-proto=present
+rustc=rustc 1.98.1 (48a229cea 2026-09-01)
+protoc=libprotoc 3.21.12
+command=rustup run 1.98.1 cargo build -p morpheum-signing-native --examples
+CARGO_TARGET_DIR=/tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target
+lockfile_restored=Cargo.lock
+binary native sha256=563604dce48786bcaddcc2deedef6de0c495c396d4183fb02d573e15d04ad69d path=/tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/native
+binary agent sha256=ebd59d9d17da6e4bc9d5c767ab7ea004e7aaadeda4c27270abd1608542a0849d path=/tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/agent
+binary agent_with_claim_verification sha256=e18f08d09e165b3f59588b9a7e9bfeb05b3039214182976204d47192401379a0 path=/tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/agent_with_claim_verification
+launch=OK

@@ -1,0 +1,28 @@
+repo_root=/agent/repos/morpheum-signing
+workspace=morpheum-signing
+package=morpheum-signing-native
+source_present crates/native/examples/native.rs
+source_present crates/native/examples/agent.rs
+source_present crates/native/examples/agent_with_claim_verification.rs
+source_present Cargo.lock
+path_dep ../morpheum-primitives
+path_ok /agent/repos/morpheum-primitives/Cargo.toml
+path_dep ../cryptogram/crates/morpheum-crypto
+path_ok /agent/repos/cryptogram/crates/morpheum-crypto/Cargo.toml
+path_dep ../cryptogram/crates/cryptogram-crypto
+path_ok /agent/repos/cryptogram/crates/cryptogram-crypto/Cargo.toml
+path_dep ../cryptogram/crates/cryptogram-hd
+path_ok /agent/repos/cryptogram/crates/cryptogram-hd/Cargo.toml
+sibling_cryptogram=present
+sibling_morpheum-primitives=present
+sibling_morpheum-proto=present
+siblings=present
+toolchain_pin=1.98.1
+rustup=present
+toolchain_installed=yes
+rustc=rustc 1.98.1 (48a229cea 2026-09-01)
+protoc=present
+protoc_version=libprotoc 3.21.12
+openssl=present
+git_head=2274e616c0106b76dfe3d18b0c869833a41026e7
+doctor=OK

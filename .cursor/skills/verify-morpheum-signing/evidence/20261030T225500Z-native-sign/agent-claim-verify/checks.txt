@@ -1,0 +1,10 @@
+ok sha256
+ok exit 0
+ok no labeled secret
+ok banner
+ok success
+ok txhash
+ok raw_bytes
+ok exact:   Claim verification: PASSED
+ok exact:   Claim embedded: YES (in SignerInfo.signing_options)
+ok absent: Claim verification: FAILED

@@ -1,0 +1,12 @@
+Morpheum Agent + Claim Verification Example
+  Issuer account: AccountId([182, 0, 48, 108, 250, 118, 114, 63, 222, 195, 149, 229, 58, 155, 61, 159, 219, 120, 177, 226, 215, 162, 60, 50, 252, 188, 210, 220, 109, 12, 64, 146])
+  Agent account:  AccountId([43, 97, 240, 236, 122, 43, 35, 82, 50, 116, 186, 63, 91, 10, 74, 158, 102, 247, 90, 17, 101, 225, 28, 237, 37, 134, 45, 138, 22, 146, 118, 29])
+  Claim built successfully
+    Sub-range size: 1000
+    Expires at:     1793487629 (Unix seconds)
+    Claim digest:   0dd522f4f015950ed25d8883acce2b40fb3cf2d49715ff82691e33ad61cc70cf
+  Claim verification: PASSED
+Transaction signed successfully with verified claim!
+  TxHash        : ecb661d41909ac0a45ac51dcbff1e4141d7cdbe55e4a5147859294b4a28afed8
+  Raw bytes len : 545 bytes
+  Claim embedded: YES (in SignerInfo.signing_options)

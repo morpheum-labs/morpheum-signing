@@ -1,0 +1,3 @@
+native 563604dce48786bcaddcc2deedef6de0c495c396d4183fb02d573e15d04ad69d /tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/native
+agent ebd59d9d17da6e4bc9d5c767ab7ea004e7aaadeda4c27270abd1608542a0849d /tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/agent
+agent_with_claim_verification e18f08d09e165b3f59588b9a7e9bfeb05b3039214182976204d47192401379a0 /tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/agent_with_claim_verification

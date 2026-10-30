@@ -1,0 +1,7 @@
+Morpheum AI Agent Signing Example
+  Claim sub-range size: 1000
+Agent transaction signed successfully with TradingKey + VC claim!
+  TxHash          : e520362be7d563b3ed9635ffea62c121dd81cda5181144c21994178c06ccf6e0
+  Nonce sub-range : 0
+  Memo            : Test market creation from AI agent with TradingKey + VC
+  Raw bytes len   : 569 bytes

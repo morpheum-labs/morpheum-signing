@@ -1,0 +1,7 @@
+ok sha256
+ok exit 0
+ok no labeled secret
+ok banner
+ok success
+ok txhash
+ok raw_bytes
