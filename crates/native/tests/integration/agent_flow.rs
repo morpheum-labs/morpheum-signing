@@ -85,6 +85,85 @@ pub async fn test_agent_without_claim() {
 }
 
 #[tokio::test]
+pub async fn test_agent_signs_the_claim_stored_on_the_signer() {
+    let claim = test_trading_key_claim();
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(claim.clone()));
+
+    let signed = agent(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
+            value: vec![1, 2, 3],
+        })
+        .sign()
+        .await
+        .expect("an agent signer with a stored claim signs when the builder sets none");
+
+    assert_eq!(
+        embedded_claim(&signed),
+        Some(claim.clone()),
+        "the signed tx carries the claim stored on the signer"
+    );
+    assert_eq!(
+        signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        Some(claim.nonce_sub_range_start),
+        "omitting a builder claim stamps nonce.sub from the claim stored on the signer"
+    );
+}
+
+fn embedded_claim(signed: &SignedTx) -> Option<TradingKeyClaim> {
+    let tx_raw = signed.tx_raw().expect("builder returns TxRaw");
+    let auth = AuthInfo::decode(tx_raw.auth_info_bytes.as_slice()).expect("auth info decodes");
+    let signer_info = auth.signer_infos.first().expect("one signer info");
+    match signer_info.signing_options.as_ref() {
+        Some(opts) => {
+            TradingKeyClaim::decode_from_signing_options(opts).expect("embedded claim decodes")
+        }
+        None => None,
+    }
+}
+
+#[tokio::test]
+pub async fn test_builder_claim_replaces_the_claim_stored_on_the_signer() {
+    let stored = test_trading_key_claim();
+    let attached = TradingKeyClaim {
+        nonce_sub_range_start: stored.nonce_sub_range_start + 1,
+        ..stored.clone()
+    };
+    assert!(
+        attached.nonce_sub_range_start < attached.nonce_sub_range_end,
+        "the builder claim stays inside a non-empty range"
+    );
+
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(stored));
+    let signed = agent(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
+            value: vec![1, 2, 3],
+        })
+        .with_trading_key_claim(attached.clone())
+        .sign()
+        .await
+        .expect("an explicit builder claim still signs");
+
+    assert_eq!(
+        embedded_claim(&signed),
+        Some(attached.clone()),
+        "a builder claim replaces the claim stored on the signer"
+    );
+    assert_eq!(
+        signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        Some(attached.nonce_sub_range_start),
+        "nonce.sub follows the builder claim, not the stored claim"
+    );
+}
+
+#[tokio::test]
 pub async fn test_agent_different_seeds_produce_different_signatures() {
     let signer1 = AgentSigner::new(&[1u8; 32], test_account_id(), None);
     let signer2 = AgentSigner::new(&[2u8; 32], test_account_id(), None);

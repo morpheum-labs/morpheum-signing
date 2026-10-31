@@ -81,9 +81,17 @@ pub fn native(signer: NativeSigner) -> builder::TxBuilder<NativeSigner> {
     builder::TxBuilder::new(signer)
 }
 
-/// Creates a `TxBuilder` backed by an **agent** signer (TradingKey + VC claim).
+/// Creates a `TxBuilder` backed by an agent signer (TradingKey + optional claim).
+///
+/// A `TradingKeyClaim` stored on `signer` is attached when the caller does not
+/// call `with_trading_key_claim`. That call replaces the stored claim.
 pub fn agent(signer: AgentSigner) -> builder::TxBuilder<AgentSigner> {
-    builder::TxBuilder::new(signer)
+    let stored = signer.trading_key_claim().cloned();
+    let builder = builder::TxBuilder::new(signer);
+    match stored {
+        Some(claim) => builder.with_trading_key_claim(claim),
+        None => builder,
+    }
 }
 
 /// Creates a `TxBuilder` backed by a local **EVM** signer (secp256k1).
