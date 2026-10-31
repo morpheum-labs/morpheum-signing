@@ -106,8 +106,7 @@ impl<S: Signer + fmt::Debug> fmt::Debug for TxBuilder<S> {
 impl<S: Signer> TxBuilder<S> {
     /// Creates a new builder for a local signer (Human or Agent).
     ///
-    /// A [`TradingKeyClaim`] stored on `signer` is attached. The caller
-    /// replaces it with [`Self::with_trading_key_claim`].
+    /// A [`TradingKeyClaim`] stored on `signer` is attached.
     pub fn new(signer: S) -> Self {
         let trading_key_claim = signer.trading_key_claim().cloned();
         Self {
