@@ -121,8 +121,6 @@ async fn sign_order(signer: AgentSigner, claim: TradingKeyClaim) -> SignedTx {
 #[tokio::test]
 pub async fn test_agent_order_verifies_under_trading_key_and_binds_claim() {
     let signer = AgentSigner::new(&[99u8; 32], test_account_id(), None);
-    // Expiry is wall-clock, so a second fixture call can change the claim.
-    // Subject is not the issuer, so an address taken from the issuer fails.
     let claim = TradingKeyClaim {
         subject: AccountId([0xAB; 32]),
         ..test_trading_key_claim()
