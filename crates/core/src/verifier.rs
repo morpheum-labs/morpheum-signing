@@ -53,6 +53,11 @@ pub struct VerifiedTx {
     /// `algo_hint == "trading_key_claim"`. The claim's issuer has been
     /// verified to match the signer's public key, expiry has been checked,
     /// and `nonce.sub` lies in `[nonce_sub_range_start, nonce_sub_range_end)`.
+    ///
+    /// The decoded signature variant is a placeholder. The wire format does
+    /// not carry the signing algorithm. Verification does not depend on the
+    /// variant. Callers must not use the variant to tell which algorithm
+    /// signed the claim.
     pub trading_key_claim: Option<TradingKeyClaim>,
 
     /// Primary wallet type (inferred from first signer's public key curve).

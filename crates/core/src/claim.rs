@@ -249,9 +249,10 @@ impl TradingKeyClaim {
             expiry_timestamp: proto.expiry_timestamp,
             nonce_sub_range_start: proto.nonce_sub_range_start,
             nonce_sub_range_end: proto.nonce_sub_range_end,
-            // Default to Ed25519 since all Signature variants are 64 bytes;
-            // the actual curve is determined by the issuer's key type during
-            // cryptographic verification.
+            // The decoded signature variant is a placeholder. The wire format
+            // does not carry the signing algorithm. Verification does not
+            // depend on the variant. Callers must not use the variant to tell
+            // which algorithm signed the claim.
             signature: crate::types::Signature::Ed25519(sig_bytes),
         }))
     }
