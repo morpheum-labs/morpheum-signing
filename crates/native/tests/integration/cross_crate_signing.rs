@@ -370,6 +370,159 @@ async fn test_agent_claim_roundtrip() {
     assert_eq!(extracted.nonce_sub_range_end, claim.nonce_sub_range_end);
 }
 
+fn matching_claim(seed: &[u8; 32]) -> TradingKeyClaim {
+    let (signer, claim) = create_agent_with_matching_claim(seed);
+    assert_eq!(
+        claim.issuer,
+        signer.public_key().to_account_id(),
+        "the fixture issuer is the signing key"
+    );
+    claim
+}
+
+async fn signed_with_sub(seed: &[u8; 32], claim: &TradingKeyClaim, sub: u32) -> SignedTx {
+    let signer = AgentSigner::new(seed, AccountId::ZERO, None);
+    let signable = if (claim.nonce_sub_range_start..claim.nonce_sub_range_end).contains(&sub) {
+        sub
+    } else {
+        claim.nonce_sub_range_start
+    };
+    let signed = agent(signer.clone())
+        .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgSubmitOrderRequest".to_string(),
+            value: vec![1],
+        })
+        .with_trading_key_claim(claim.clone())
+        .with_nonce(Nonce {
+            monotonic: 1,
+            ts_ms: 2,
+            sub: signable,
+        })
+        .sign()
+        .await
+        .expect("an in-range sub signs");
+    if signable == sub {
+        return signed;
+    }
+    let mut nonce = signed.tx.nonce.expect("the signed tx carries a nonce");
+    nonce.sub = sub;
+    resign_with_nonce(signed, &signer, Some(nonce)).await
+}
+
+async fn resign_with_nonce(
+    signed: SignedTx,
+    signer: &AgentSigner,
+    nonce: Option<Nonce>,
+) -> SignedTx {
+    use prost::Message as _;
+
+    let mut tx = signed.tx;
+    tx.nonce = nonce;
+    let mut tx_raw = signed.tx_raw.expect("the builder returns TxRaw");
+    let sign_doc = morpheum_signing_native::canonical_sign_doc(
+        tx_raw.body_bytes.clone(),
+        tx_raw.auth_info_bytes.clone(),
+        "morpheum-test-1",
+        0,
+        TEST_GENESIS_HASH.to_vec(),
+        tx.nonce,
+    );
+    let signature = signer
+        .sign(&sign_doc)
+        .await
+        .expect("the trading key re-signs the tx");
+    let sig_bytes = signature.to_bytes();
+    tx.signatures = vec![sig_bytes.clone()];
+    tx_raw.signatures = vec![sig_bytes];
+    SignedTx::new(tx, tx_raw.encode_to_vec(), Some(tx_raw))
+}
+
+#[tokio::test]
+async fn test_verify_rejects_nonce_sub_outside_claim_range() {
+    let seed = [99u8; 32];
+    let claim = matching_claim(&seed);
+    let start = claim.nonce_sub_range_start;
+    let end = claim.nonce_sub_range_end;
+    assert!(start > 0, "the fixture range must have a sub below start");
+
+    for sub in [start - 1, end] {
+        let signed = signed_with_sub(&seed, &claim, sub).await;
+        assert_eq!(
+            signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
+            Some(sub),
+            "the tx under test carries nonce.sub {sub}"
+        );
+        match verify_signed_tx(
+            &signed,
+            &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+            0,
+            now_secs(),
+        ) {
+            Err(SigningError::ClaimVerification(msg)) if msg.contains("outside") => {}
+            Ok(_) => panic!("verify_signed_tx accepted nonce.sub {sub} outside [{start}, {end})"),
+            Err(err) => panic!("nonce.sub {sub} must fail claim verification, got {err}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_verify_accepts_nonce_sub_on_claim_range_bounds() {
+    let seed = [99u8; 32];
+    let claim = matching_claim(&seed);
+    let start = claim.nonce_sub_range_start;
+    let end = claim.nonce_sub_range_end;
+    assert!(
+        end > start + 1,
+        "the fixture range must contain a last valid sub"
+    );
+
+    for sub in [start, end - 1] {
+        let signed = signed_with_sub(&seed, &claim, sub).await;
+        let verified = verify_signed_tx(
+            &signed,
+            &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+            0,
+            now_secs(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("nonce.sub {sub} is inside [{start}, {end}) and must verify, got {err}")
+        });
+        assert_eq!(verified.nonce.as_ref().map(|nonce| nonce.sub), Some(sub));
+        let extracted = verified
+            .trading_key_claim
+            .expect("the verified tx carries the claim");
+        assert_eq!(extracted.issuer, claim.issuer);
+        assert_eq!(extracted.nonce_sub_range_start, start);
+        assert_eq!(extracted.nonce_sub_range_end, end);
+    }
+}
+
+#[tokio::test]
+async fn test_verify_rejects_a_claim_with_no_nonce() {
+    let seed = [99u8; 32];
+    let claim = matching_claim(&seed);
+    let signed = signed_with_sub(&seed, &claim, claim.nonce_sub_range_start).await;
+    let signer = AgentSigner::new(&seed, AccountId::ZERO, None);
+    let signed = resign_with_nonce(signed, &signer, None).await;
+    assert!(
+        signed.tx.nonce.is_none(),
+        "the tx under test carries no nonce"
+    );
+
+    match verify_signed_tx(
+        &signed,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    ) {
+        Err(SigningError::ClaimVerification(msg)) if msg.contains("nonce") => {}
+        Ok(_) => panic!("verify_signed_tx accepted a trading-key claim with no nonce"),
+        Err(err) => panic!("a claim with no nonce must fail claim verification, got {err}"),
+    }
+}
+
 /// EvmSigner (secp256k1) → roundtrip verification.
 #[tokio::test]
 async fn test_evm_sign_verify_roundtrip() {
