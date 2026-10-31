@@ -64,10 +64,7 @@ fn payload_to_any(type_url: &str, payload: &Payload) -> Any {
     }
 }
 
-/// Creates an `AgentSigner` with a `TradingKeyClaim` whose subject is that
-/// key's account id. `verify_signed_tx` binds the claim subject to the signer.
 fn create_agent_with_matching_claim(seed: &[u8; 32]) -> (AgentSigner, TradingKeyClaim) {
-    // Derive the public key AccountId first (this is what the verifier checks).
     let temp = AgentSigner::new(seed, AccountId::ZERO, None);
     let pubkey_account_id = temp.public_key().to_account_id();
 
@@ -404,8 +401,6 @@ async fn sign_claim(seed: &[u8; 32], claim: TradingKeyClaim) -> SignedTx {
         .expect("the builder signs a claim without comparing its subject to the key")
 }
 
-/// The owner issues the claim. The trading key is the subject and signs.
-/// Verification accepts that delegation.
 #[tokio::test]
 async fn test_delegated_claim_verifies_when_subject_is_the_signing_key() {
     let seed = [99u8; 32];
@@ -433,7 +428,6 @@ async fn test_delegated_claim_verifies_when_subject_is_the_signing_key() {
     assert_eq!(extracted.subject, subject);
 }
 
-/// The signing key is not the claim subject. Verification refuses the tx.
 #[tokio::test]
 async fn test_verify_rejects_a_claim_subject_that_is_not_the_signing_key() {
     let seed = [99u8; 32];
@@ -441,7 +435,6 @@ async fn test_verify_rejects_a_claim_subject_that_is_not_the_signing_key() {
     let other = AccountId([0xAB; 32]);
     assert_ne!(other, signing_key);
 
-    // The issuer is the signing key. An issuer check would accept this claim.
     let claim = issued_claim(signing_key, other);
     let signed = sign_claim(&seed, claim).await;
     match verify_signed_tx(
