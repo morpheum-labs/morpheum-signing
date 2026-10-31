@@ -87,13 +87,7 @@ pub fn native(signer: NativeSigner) -> builder::TxBuilder<NativeSigner> {
 /// call `with_trading_key_claim`. The same claim bytes still sign. Different
 /// claim bytes make `sign` return `InvalidClaim` and produce no signature.
 pub fn agent(signer: AgentSigner) -> builder::TxBuilder<AgentSigner> {
-    use signer::Signer;
-    let stored = signer.trading_key_claim().cloned();
-    let builder = builder::TxBuilder::new(signer);
-    match stored {
-        Some(claim) => builder.with_trading_key_claim(claim),
-        None => builder,
-    }
+    builder::TxBuilder::new(signer)
 }
 
 /// Creates a `TxBuilder` backed by a local **EVM** signer (secp256k1).
