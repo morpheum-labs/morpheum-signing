@@ -46,11 +46,6 @@ impl AgentSigner {
             claim,
         }
     }
-
-    #[must_use]
-    pub(crate) fn trading_key_claim(&self) -> Option<&TradingKeyClaim> {
-        self.claim.as_ref()
-    }
 }
 
 #[async_trait]
@@ -81,6 +76,10 @@ impl Signer for AgentSigner {
     /// Returns the canonical AgentId (overrides default for efficiency).
     fn account_id(&self) -> AccountId {
         self.agent_id.clone()
+    }
+
+    fn trading_key_claim(&self) -> Option<&TradingKeyClaim> {
+        self.claim.as_ref()
     }
 }
 

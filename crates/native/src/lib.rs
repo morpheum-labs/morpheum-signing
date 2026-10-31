@@ -84,8 +84,10 @@ pub fn native(signer: NativeSigner) -> builder::TxBuilder<NativeSigner> {
 /// Creates a `TxBuilder` backed by an agent signer (TradingKey + optional claim).
 ///
 /// A `TradingKeyClaim` stored on `signer` is attached when the caller does not
-/// call `with_trading_key_claim`. That call replaces the stored claim.
+/// call `with_trading_key_claim`. The same claim bytes still sign. Different
+/// claim bytes make `sign` return `InvalidClaim` and produce no signature.
 pub fn agent(signer: AgentSigner) -> builder::TxBuilder<AgentSigner> {
+    use signer::Signer;
     let stored = signer.trading_key_claim().cloned();
     let builder = builder::TxBuilder::new(signer);
     match stored {

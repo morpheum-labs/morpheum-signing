@@ -13,6 +13,7 @@
 use async_trait::async_trait;
 
 use crate::{
+    claim::TradingKeyClaim,
     error::SigningError,
     proto::tx::v1::{self as tx, SignDoc},
     types::{AccountId, PublicKey, Signature, WalletType},
@@ -76,6 +77,17 @@ pub trait Signer: Send + Sync + 'static {
     /// Concrete impls may override for non-standard modes (e.g. gasless, EIP-191).
     fn sign_mode(&self) -> tx::SignMode {
         self.wallet_type().default_sign_mode()
+    }
+
+    /// The `TradingKeyClaim` stored on this signer, when it has one.
+    ///
+    /// [`TxBuilder::sign`](crate::builder::TxBuilder::sign) returns
+    /// [`SigningError::InvalidClaim`] when `with_trading_key_claim` passes
+    /// bytes that differ from this claim, and it does not sign. The same
+    /// bytes still sign. Signers that store no claim return `None`.
+    #[must_use]
+    fn trading_key_claim(&self) -> Option<&TradingKeyClaim> {
+        None
     }
 }
 
