@@ -113,6 +113,75 @@ pub async fn test_agent_signs_the_claim_stored_on_the_signer() {
     );
 }
 
+#[tokio::test]
+pub async fn test_tx_builder_new_signs_the_stored_claim_on_the_no_provider_path() {
+    let claim = test_trading_key_claim();
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(claim.clone()));
+
+    let signed = TxBuilder::new(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(place_order())
+        .sign()
+        .await
+        .expect("TxBuilder::new signs when the caller sets no claim");
+
+    assert_eq!(
+        embedded_claim(&signed),
+        Some(claim.clone()),
+        "TxBuilder::new attaches the claim stored on the signer"
+    );
+    assert_eq!(
+        signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        Some(claim.nonce_sub_range_start),
+        "the no-provider path stamps nonce.sub from the stored claim start"
+    );
+}
+
+#[tokio::test]
+pub async fn test_agent_and_tx_builder_new_sign_the_same_bytes() {
+    let claim = test_trading_key_claim();
+    let seed = [99u8; 32];
+
+    let via_agent = agent(AgentSigner::new(
+        &seed,
+        test_account_id(),
+        Some(claim.clone()),
+    ))
+    .chain_id(ORDER_CHAIN_ID)
+    .with_genesis_hash(ORDER_GENESIS_HASH)
+    .account_number(ORDER_ACCOUNT_NUMBER)
+    .add_message(place_order())
+    .sign()
+    .await
+    .expect("agent() signs the stored claim");
+
+    let via_new = TxBuilder::new(AgentSigner::new(&seed, test_account_id(), Some(claim)))
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(place_order())
+        .sign()
+        .await
+        .expect("TxBuilder::new signs the stored claim");
+
+    assert_eq!(
+        embedded_claim(&via_new),
+        embedded_claim(&via_agent),
+        "both entry points attach the same claim"
+    );
+    assert_eq!(
+        via_new.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        via_agent.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        "both entry points stamp the same nonce.sub"
+    );
+    assert_eq!(
+        via_new.raw_bytes, via_agent.raw_bytes,
+        "both entry points produce the same signed bytes"
+    );
+}
+
 fn embedded_claim(signed: &SignedTx) -> Option<TradingKeyClaim> {
     let tx_raw = signed.tx_raw().expect("builder returns TxRaw");
     let auth = AuthInfo::decode(tx_raw.auth_info_bytes.as_slice()).expect("auth info decodes");

@@ -105,7 +105,10 @@ impl<S: Signer + fmt::Debug> fmt::Debug for TxBuilder<S> {
 
 impl<S: Signer> TxBuilder<S> {
     /// Creates a new builder for a local signer (Human or Agent).
+    ///
+    /// A [`TradingKeyClaim`] stored on `signer` is attached.
     pub fn new(signer: S) -> Self {
+        let trading_key_claim = signer.trading_key_claim().cloned();
         Self {
             signer,
             chain_id: "morpheum-test-1".to_string(),
@@ -119,7 +122,7 @@ impl<S: Signer> TxBuilder<S> {
             manual_nonce: None,
             address_mapper: Box::new(DefaultAddressMapper),
             wallet_adapter: None,
-            trading_key_claim: None,
+            trading_key_claim,
             priority_tip: 0,
             tx_class: morpheum_primitives::tx_class::TxClass::Standard,
             urgent: false,
