@@ -51,7 +51,8 @@ pub struct VerifiedTx {
     ///
     /// Present when a signer's `signing_options` contains a claim with
     /// `algo_hint == "trading_key_claim"`. The claim's issuer has been
-    /// verified to match the signer's public key, and expiry has been checked.
+    /// verified to match the signer's public key, expiry has been checked,
+    /// and `nonce.sub` lies in `[nonce_sub_range_start, nonce_sub_range_end)`.
     pub trading_key_claim: Option<TradingKeyClaim>,
 
     /// Primary wallet type (inferred from first signer's public key curve).
@@ -121,7 +122,8 @@ pub struct VerifiedTx {
 /// - A binding `ctx` requires would be vacuous (genesis binding required but
 ///   `ctx` carries no genesis hash, or nonce binding required but the
 ///   transaction carries no nonce).
-/// - A `TradingKeyClaim` is malformed, expired, or has issuer mismatch.
+/// - A `TradingKeyClaim` is malformed, expired, has issuer mismatch, has no
+///   `nonce`, or does not cover `nonce.sub`.
 pub fn verify_signed_tx(
     signed_tx: &SignedTx,
     ctx: &TxVerifyContext<'_>,
@@ -227,6 +229,16 @@ pub fn verify_signed_tx(
             if let Some(claim) = TradingKeyClaim::decode_from_signing_options(opts)? {
                 // Structural + issuer verification (expiry + issuer-pubkey match)
                 claim.verify(now, &pubkey)?;
+                let Some(nonce) = tx.nonce.as_ref() else {
+                    return Err(SigningError::claim_verification(
+                        "trading key claim requires a nonce.sub inside its range",
+                    ));
+                };
+                if !(claim.nonce_sub_range_start..claim.nonce_sub_range_end).contains(&nonce.sub) {
+                    return Err(SigningError::claim_verification(
+                        "nonce sub is outside the trading key claim range",
+                    ));
+                }
 
                 trading_key_claim = Some(claim);
             }
