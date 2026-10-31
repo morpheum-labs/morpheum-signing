@@ -87,6 +87,12 @@ impl WalletType {
             Self::Hardware => tx::SignMode::Ed25519,
         }
     }
+
+    /// `SignerInfo.chain_type` for this wallet.
+    #[must_use]
+    pub const fn chain_type(self) -> i32 {
+        self as i32
+    }
 }
 
 impl fmt::Display for WalletType {
