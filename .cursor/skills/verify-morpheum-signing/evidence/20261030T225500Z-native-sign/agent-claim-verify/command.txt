@@ -1,0 +1,4 @@
+feature=agent-claim-verify
+example=agent_with_claim_verification
+argv=/tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/agent_with_claim_verification
+built_by=rustup run 1.98.1 cargo build -p morpheum-signing-native --examples

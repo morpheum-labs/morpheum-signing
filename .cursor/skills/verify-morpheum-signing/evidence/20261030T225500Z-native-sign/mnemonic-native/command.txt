@@ -1,0 +1,4 @@
+feature=mnemonic-native
+example=native
+argv=/tmp/verify-morpheum-signing-20261030T225500Z-native-sign/target/debug/examples/native
+built_by=rustup run 1.98.1 cargo build -p morpheum-signing-native --examples
