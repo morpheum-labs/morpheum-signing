@@ -414,6 +414,56 @@ pub trait IntoAny: prost::Name {
 
 impl<T: prost::Name> IntoAny for T {}
 
+#[cfg(test)]
+mod tests {
+    use super::PublicKey;
+
+    #[test]
+    fn parse_accepts_morpheum_and_cosmos_public_key_urls() {
+        let secp = crate::proto::Any {
+            type_url: String::new(),
+            value: vec![0x02; 33],
+        };
+        for type_url in [
+            "/morpheum.crypto.secp256k1.PubKey",
+            "/cosmos.crypto.secp256k1.PubKey",
+        ] {
+            let any = crate::proto::Any {
+                type_url: type_url.to_string(),
+                ..secp.clone()
+            };
+            assert!(
+                matches!(
+                    PublicKey::from_proto_any(&any).expect(type_url),
+                    PublicKey::Secp256k1(_)
+                ),
+                "{type_url}"
+            );
+        }
+
+        let ed25519 = crate::proto::Any {
+            type_url: String::new(),
+            value: vec![0x11; 32],
+        };
+        for type_url in [
+            "/morpheum.crypto.ed25519.PubKey",
+            "/cosmos.crypto.ed25519.PubKey",
+        ] {
+            let any = crate::proto::Any {
+                type_url: type_url.to_string(),
+                ..ed25519.clone()
+            };
+            assert!(
+                matches!(
+                    PublicKey::from_proto_any(&any).expect(type_url),
+                    PublicKey::Ed25519(_)
+                ),
+                "{type_url}"
+            );
+        }
+    }
+}
+
 /// Signing options (Morpheum extension).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SigningOptions {
