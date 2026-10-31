@@ -26,9 +26,6 @@ pub struct AgentSigner {
     trading_key: SigningKey,
     /// The canonical AgentId (from identity registration).
     agent_id: AccountId,
-    /// Optional TradingKeyClaim (for delegation, limits, and nonce sub-range).
-    /// Embedded in `Tx.AuthInfo` during signing and validated by `auth::NonceHotPath`.
-    #[allow(dead_code)]
     claim: Option<TradingKeyClaim>,
 }
 
@@ -48,6 +45,11 @@ impl AgentSigner {
             agent_id,
             claim,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn trading_key_claim(&self) -> Option<&TradingKeyClaim> {
+        self.claim.as_ref()
     }
 }
 
