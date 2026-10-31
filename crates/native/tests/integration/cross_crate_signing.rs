@@ -370,6 +370,93 @@ async fn test_agent_claim_roundtrip() {
     assert_eq!(extracted.nonce_sub_range_end, claim.nonce_sub_range_end);
 }
 
+fn trading_key_account(seed: &[u8; 32]) -> AccountId {
+    AgentSigner::new(seed, AccountId::ZERO, None)
+        .public_key()
+        .to_account_id()
+}
+
+fn issued_claim(issuer: AccountId, subject: AccountId) -> TradingKeyClaim {
+    let now = now_secs();
+    VcClaimBuilder::new()
+        .issuer(issuer)
+        .subject(subject)
+        .permissions(1 << 0)
+        .max_daily_usd(1_000_000)
+        .expiry(now + 86_400)
+        .nonce_sub_range(1000, 2000)
+        .signature(Signature::Ed25519([1u8; 64]))
+        .build(now)
+        .expect("claim build")
+}
+
+async fn sign_claim(seed: &[u8; 32], claim: TradingKeyClaim) -> SignedTx {
+    let signer = AgentSigner::new(seed, AccountId::ZERO, None);
+    agent(signer)
+        .chain_id("morpheum-test-1")
+        .with_genesis_hash(TEST_GENESIS_HASH)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgSubmitOrderRequest".to_string(),
+            value: vec![1],
+        })
+        .with_trading_key_claim(claim)
+        .sign()
+        .await
+        .expect("the builder signs a claim without comparing its subject to the key")
+}
+
+/// The owner issues the claim. The trading key is the subject and signs.
+/// Verification accepts that delegation.
+#[tokio::test]
+async fn test_delegated_claim_verifies_when_subject_is_the_signing_key() {
+    let seed = [99u8; 32];
+    let subject = trading_key_account(&seed);
+    let owner = AccountId([0x22; 32]);
+    assert_ne!(
+        owner, subject,
+        "the issuer must be a different account from the trading key"
+    );
+
+    let claim = issued_claim(owner.clone(), subject.clone());
+    let signed = sign_claim(&seed, claim).await;
+    let verified = verify_signed_tx(
+        &signed,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    )
+    .unwrap_or_else(|err| panic!("a claim issued to the signing key must verify, got {err}"));
+
+    let extracted = verified
+        .trading_key_claim
+        .expect("the verified tx carries the claim");
+    assert_eq!(extracted.issuer, owner);
+    assert_eq!(extracted.subject, subject);
+}
+
+/// The signing key is not the claim subject. Verification refuses the tx.
+#[tokio::test]
+async fn test_verify_rejects_a_claim_subject_that_is_not_the_signing_key() {
+    let seed = [99u8; 32];
+    let signing_key = trading_key_account(&seed);
+    let other = AccountId([0xAB; 32]);
+    assert_ne!(other, signing_key);
+
+    // The issuer is the signing key. An issuer check would accept this claim.
+    let claim = issued_claim(signing_key, other);
+    let signed = sign_claim(&seed, claim).await;
+    match verify_signed_tx(
+        &signed,
+        &vctx("morpheum-test-1", &TEST_GENESIS_HASH),
+        0,
+        now_secs(),
+    ) {
+        Err(SigningError::ClaimVerification(msg)) if msg.contains("subject") => {}
+        Ok(_) => panic!("verify_signed_tx accepted a claim whose subject is not the signing key"),
+        Err(err) => panic!("expected a subject mismatch, got {err}"),
+    }
+}
+
 /// EvmSigner (secp256k1) → roundtrip verification.
 #[tokio::test]
 async fn test_evm_sign_verify_roundtrip() {
