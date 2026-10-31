@@ -125,41 +125,153 @@ fn embedded_claim(signed: &SignedTx) -> Option<TradingKeyClaim> {
     }
 }
 
-#[tokio::test]
-pub async fn test_builder_claim_replaces_the_claim_stored_on_the_signer() {
-    let stored = test_trading_key_claim();
+fn claim_bytes_differ(stored: &TradingKeyClaim) -> TradingKeyClaim {
     let attached = TradingKeyClaim {
         nonce_sub_range_start: stored.nonce_sub_range_start + 1,
         ..stored.clone()
     };
     assert!(
         attached.nonce_sub_range_start < attached.nonce_sub_range_end,
-        "the builder claim stays inside a non-empty range"
+        "the disagreeing claim stays inside a non-empty range"
+    );
+    assert_ne!(
+        stored.encode_to_vec(),
+        attached.encode_to_vec(),
+        "the caller passes different claim bytes"
+    );
+    attached
+}
+
+fn place_order() -> Any {
+    Any {
+        type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
+        value: vec![1, 2, 3],
+    }
+}
+
+struct CountingNonce {
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    sub: u32,
+}
+
+#[async_trait::async_trait]
+impl NonceProvider for CountingNonce {
+    async fn next_nonce(&self, _account_id: &AccountId) -> Result<Nonce, SigningError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(Nonce {
+            monotonic: 1,
+            ts_ms: 2,
+            sub: self.sub,
+        })
+    }
+}
+
+fn assert_claim_disagreement_refused(
+    result: Result<SignedTx, SigningError>,
+    calls: &std::sync::atomic::AtomicUsize,
+) {
+    match result {
+        Ok(signed) => panic!(
+            "a disagreeing claim must not sign, got {} signature bytes",
+            signed
+                .tx
+                .signatures
+                .first()
+                .map(|sig| sig.len())
+                .unwrap_or(0)
+        ),
+        Err(SigningError::InvalidClaim(msg)) if msg.contains("disagrees") => {}
+        Err(err) => panic!("a disagreeing claim must be an invalid claim, got {err}"),
+    }
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "a refused claim must not ask the nonce provider"
+    );
+}
+
+#[tokio::test]
+pub async fn test_sign_refuses_a_trading_key_claim_that_disagrees_with_the_signer() {
+    let stored = test_trading_key_claim();
+    let attached = claim_bytes_differ(&stored);
+    let sub = attached.nonce_sub_range_start;
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(stored));
+
+    let result = agent(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(place_order())
+        .with_trading_key_claim(attached)
+        .with_nonce_provider(CountingNonce {
+            calls: std::sync::Arc::clone(&calls),
+            sub,
+        })
+        .sign()
+        .await;
+
+    assert_claim_disagreement_refused(result, &calls);
+}
+
+#[tokio::test]
+pub async fn test_tx_builder_new_refuses_a_trading_key_claim_that_disagrees() {
+    let stored = test_trading_key_claim();
+    let attached = claim_bytes_differ(&stored);
+    let sub = attached.nonce_sub_range_start;
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(stored));
+
+    let result = TxBuilder::new(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(place_order())
+        .with_trading_key_claim(attached)
+        .with_nonce_provider(CountingNonce {
+            calls: std::sync::Arc::clone(&calls),
+            sub,
+        })
+        .sign()
+        .await;
+
+    assert_claim_disagreement_refused(result, &calls);
+}
+
+#[tokio::test]
+pub async fn test_identical_trading_key_claim_bytes_still_sign() {
+    let stored = test_trading_key_claim();
+    let passed = stored.clone();
+    assert_eq!(
+        stored.encode_to_vec(),
+        passed.encode_to_vec(),
+        "the caller passes the stored claim's bytes"
     );
 
-    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(stored));
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), Some(stored.clone()));
     let signed = agent(signer)
         .chain_id(ORDER_CHAIN_ID)
         .with_genesis_hash(ORDER_GENESIS_HASH)
         .account_number(ORDER_ACCOUNT_NUMBER)
-        .add_message(Any {
-            type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
-            value: vec![1, 2, 3],
-        })
-        .with_trading_key_claim(attached.clone())
+        .add_message(place_order())
+        .with_trading_key_claim(passed)
         .sign()
         .await
-        .expect("an explicit builder claim still signs");
+        .expect("the same claim bytes still sign");
 
-    assert_eq!(
-        embedded_claim(&signed),
-        Some(attached.clone()),
-        "a builder claim replaces the claim stored on the signer"
+    let signature = signed
+        .tx
+        .signatures
+        .first()
+        .expect("the same claim bytes produce a signature");
+    assert!(
+        !signature.is_empty(),
+        "the same claim bytes produce a signature"
     );
     assert_eq!(
-        signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
-        Some(attached.nonce_sub_range_start),
-        "nonce.sub follows the builder claim, not the stored claim"
+        embedded_claim(&signed),
+        Some(stored),
+        "the signed tx carries those claim bytes"
     );
 }
 
