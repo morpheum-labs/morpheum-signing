@@ -3,7 +3,10 @@
 //! Verifies the full agent signing flow using `AgentSigner` and the `agent()` builder.
 
 use super::common::*;
+use ed25519_dalek::{Signature as Ed25519Signature, Verifier, VerifyingKey};
 use morpheum_signing_native::prelude::*;
+use morpheum_signing_native::sign_doc_signing_bytes;
+use prost::Message;
 
 #[tokio::test]
 pub async fn test_agent_signing_flow() {
@@ -93,5 +96,88 @@ pub async fn test_agent_different_seeds_produce_different_signatures() {
     assert_ne!(
         tx1.tx.signatures, tx2.tx.signatures,
         "Different keys must produce different sigs"
+    );
+}
+
+const ORDER_CHAIN_ID: &str = "morpheum-test-1";
+const ORDER_GENESIS_HASH: [u8; 32] = [0x5A; 32];
+const ORDER_ACCOUNT_NUMBER: u64 = 7;
+
+async fn sign_order(signer: AgentSigner, claim: TradingKeyClaim) -> SignedTx {
+    agent(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .account_number(ORDER_ACCOUNT_NUMBER)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
+            value: vec![1, 2, 3],
+        })
+        .with_trading_key_claim(claim)
+        .sign()
+        .await
+        .expect("agent order signs")
+}
+
+#[tokio::test]
+pub async fn test_agent_order_verifies_under_trading_key_and_binds_claim() {
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), None);
+    // Expiry is wall-clock, so a second fixture call can change the claim.
+    // Subject is not the issuer, so an address taken from the issuer fails.
+    let claim = TradingKeyClaim {
+        subject: AccountId([0xAB; 32]),
+        ..test_trading_key_claim()
+    };
+
+    let signed = sign_order(signer.clone(), claim.clone()).await;
+    let resigned = sign_order(signer.clone(), claim.clone()).await;
+    assert_eq!(
+        signed.raw_bytes, resigned.raw_bytes,
+        "a retried order must re-sign to the same bytes"
+    );
+
+    let tx_raw = signed.tx_raw().expect("builder returns TxRaw").clone();
+    assert_eq!(
+        tx_raw.signatures, signed.tx.signatures,
+        "the broadcast signature is the signature on the tx"
+    );
+
+    let preimage = sign_doc_signing_bytes(
+        tx_raw.body_bytes.clone(),
+        tx_raw.auth_info_bytes.clone(),
+        ORDER_CHAIN_ID,
+        ORDER_ACCOUNT_NUMBER,
+        ORDER_GENESIS_HASH.to_vec(),
+        signed.tx.nonce,
+    );
+
+    let PublicKey::Ed25519(trading_key) = signer.public_key() else {
+        panic!("AgentSigner exposes an ed25519 TradingKey");
+    };
+    let trading_key = VerifyingKey::from_bytes(&trading_key).expect("valid ed25519 point");
+    let signature = Ed25519Signature::from_slice(tx_raw.signatures.first().expect("one signature"))
+        .expect("raw 64-byte RFC 8032 signature");
+    trading_key
+        .verify(&preimage, &signature)
+        .expect("signature verifies under public_key() over the canonical SignDoc");
+
+    let auth = AuthInfo::decode(tx_raw.auth_info_bytes.as_slice()).expect("auth info decodes");
+    let signer_info = auth.signer_infos.first().expect("one signer info");
+    let embedded = TradingKeyClaim::decode_from_signing_options(
+        signer_info
+            .signing_options
+            .as_ref()
+            .expect("claim is embedded"),
+    )
+    .expect("embedded claim decodes");
+    assert_eq!(
+        embedded,
+        Some(claim),
+        "the signed tx carries the exact claim"
+    );
+    let expected_address = "ab".repeat(32);
+    assert_eq!(
+        signer_info.trading_key_address.as_deref(),
+        Some(expected_address.as_str()),
+        "trading_key_address is the lowercase hex of the claim subject"
     );
 }
