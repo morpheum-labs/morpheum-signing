@@ -333,10 +333,28 @@ impl<S: Signer> TxBuilder<S> {
     }
 
     /// Attaches a `TradingKeyClaim` for agent delegation.
+    ///
+    /// [`sign`](Self::sign) embeds the claim in `SignerInfo.signing_options`.
+    /// When the caller sets neither a manual nonce nor a nonce provider,
+    /// `sign` sets `nonce.sub` to the claim's `nonce_sub_range_start`. That
+    /// start is inside `[start, end)` for every claim `sign` accepts. A
+    /// manual nonce or a provider nonce, including its `sub`, is left as
+    /// supplied.
     #[must_use]
     pub fn with_trading_key_claim(mut self, claim: TradingKeyClaim) -> Self {
         self.trading_key_claim = Some(claim);
         self
+    }
+
+    fn nonce_with_claim_sub_start(&self) -> Nonce {
+        Nonce {
+            monotonic: 0,
+            ts_ms: 0,
+            sub: self
+                .trading_key_claim
+                .as_ref()
+                .map_or(0, |claim| claim.nonce_sub_range_start),
+        }
     }
 
     // ==================== FINAL SIGN ====================
@@ -379,11 +397,7 @@ impl<S: Signer> TxBuilder<S> {
         } else if let Some(provider) = &self.nonce_provider {
             provider.next_nonce(&self.signer.account_id()).await?
         } else {
-            Nonce {
-                monotonic: 0,
-                ts_ms: 0,
-                sub: 0,
-            }
+            self.nonce_with_claim_sub_start()
         };
 
         // 2. Build TxBody (messages are already Any)

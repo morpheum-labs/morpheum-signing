@@ -21,6 +21,9 @@ pub async fn test_agent_signing_flow() {
         value: vec![],
     };
 
+    let sub_start = trading_key_claim.nonce_sub_range_start;
+    let sub_end = trading_key_claim.nonce_sub_range_end;
+
     let signed_tx = agent(signer)
         .chain_id("morpheum-test-1")
         .with_genesis_hash([0x5A_u8; 32])
@@ -35,10 +38,19 @@ pub async fn test_agent_signing_flow() {
         !signed_tx.raw_bytes.is_empty(),
         "Signed tx should not be empty"
     );
-    assert_eq!(
-        signed_tx.tx.nonce.as_ref().map_or(0, |n| n.sub),
-        0,
-        "Default nonce sub should be 0 when no nonce provider is set"
+    let sub = signed_tx
+        .tx
+        .nonce
+        .as_ref()
+        .expect("signed tx carries a nonce")
+        .sub;
+    assert!(
+        sub_start > 0,
+        "the claim range must exclude the unset sub 0"
+    );
+    assert!(
+        (sub_start..sub_end).contains(&sub),
+        "signed nonce.sub {sub} must sit inside the claim range [{sub_start}, {sub_end})"
     );
     assert_eq!(
         signed_tx.tx.body.as_ref().unwrap().memo,
@@ -65,6 +77,11 @@ pub async fn test_agent_without_claim() {
         .expect("Agent without claim should succeed");
 
     assert!(!signed_tx.raw_bytes.is_empty());
+    assert_eq!(
+        signed_tx.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        Some(0),
+        "an agent sign with no claim and no provider keeps nonce.sub at 0"
+    );
 }
 
 #[tokio::test]
@@ -158,6 +175,23 @@ pub async fn test_agent_order_verifies_under_trading_key_and_binds_claim() {
         .verify(&preimage, &signature)
         .expect("signature verifies under public_key() over the canonical SignDoc");
 
+    let sub = signed
+        .tx
+        .nonce
+        .as_ref()
+        .expect("signed order carries a nonce")
+        .sub;
+    assert!(
+        claim.nonce_sub_range_start > 0,
+        "the claim range must exclude the unset sub 0"
+    );
+    assert!(
+        (claim.nonce_sub_range_start..claim.nonce_sub_range_end).contains(&sub),
+        "signed nonce.sub {sub} must sit inside the claim range [{}, {})",
+        claim.nonce_sub_range_start,
+        claim.nonce_sub_range_end,
+    );
+
     let auth = AuthInfo::decode(tx_raw.auth_info_bytes.as_slice()).expect("auth info decodes");
     let signer_info = auth.signer_infos.first().expect("one signer info");
     let embedded = TradingKeyClaim::decode_from_signing_options(
@@ -177,5 +211,48 @@ pub async fn test_agent_order_verifies_under_trading_key_and_binds_claim() {
         signer_info.trading_key_address.as_deref(),
         Some(expected_address.as_str()),
         "trading_key_address is the lowercase hex of the claim subject"
+    );
+}
+
+struct SuppliedSub(u32);
+
+#[async_trait::async_trait]
+impl NonceProvider for SuppliedSub {
+    async fn next_nonce(&self, _account_id: &AccountId) -> Result<Nonce, SigningError> {
+        Ok(Nonce {
+            monotonic: 4,
+            ts_ms: 5,
+            sub: self.0,
+        })
+    }
+}
+
+#[tokio::test]
+pub async fn test_agent_claim_keeps_a_supplied_sub() {
+    let claim = test_trading_key_claim();
+    let supplied = claim.nonce_sub_range_start + 1;
+    assert!(
+        supplied < claim.nonce_sub_range_end,
+        "the supplied sub must itself sit inside the claim range"
+    );
+
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), None);
+    let signed = agent(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
+            value: vec![1],
+        })
+        .with_trading_key_claim(claim)
+        .with_nonce_provider(SuppliedSub(supplied))
+        .sign()
+        .await
+        .expect("agent order with a nonce provider signs");
+
+    assert_eq!(
+        signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        Some(supplied),
+        "a provider sub is the signed sub"
     );
 }
