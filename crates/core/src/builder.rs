@@ -341,6 +341,10 @@ impl<S: Signer> TxBuilder<S> {
     /// manual nonce or a provider nonce keeps the `sub` it supplied when
     /// that `sub` is inside `[start, end)`. Otherwise `sign` returns
     /// [`SigningError::InvalidClaim`] and does not sign.
+    ///
+    /// When the signer stores a claim, different bytes also return
+    /// [`SigningError::InvalidClaim`] and do not sign. The same bytes still
+    /// sign.
     #[must_use]
     pub fn with_trading_key_claim(mut self, claim: TradingKeyClaim) -> Self {
         self.trading_key_claim = Some(claim);
@@ -390,6 +394,17 @@ impl<S: Signer> TxBuilder<S> {
         // lose nothing but the call.
         if self.genesis_hash.is_empty() {
             return Err(SigningError::GenesisHashUnset);
+        }
+
+        if let (Some(stored), Some(attached)) = (
+            self.signer.trading_key_claim(),
+            self.trading_key_claim.as_ref(),
+        ) {
+            if stored.encode_to_vec() != attached.encode_to_vec() {
+                return Err(SigningError::invalid_claim(
+                    "trading key claim disagrees with the claim stored on the signer",
+                ));
+            }
         }
 
         // 1. Resolve nonce: manual > provider > default fallback
