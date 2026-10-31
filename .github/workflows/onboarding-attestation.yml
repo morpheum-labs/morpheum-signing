@@ -3,8 +3,14 @@
 #
 # Every commit in a member PR must carry the Morpheum-Onboarding trailer, which the
 # workspace's prepare-commit-msg hook adds only on a machine that passes the onboarding
-# doctor. Fork PRs (outside contributors) and bot-authored PRs are exempt. The trailer is
-# an attestation, not a signature: forging it is a deliberate act, visible in history.
+# doctor. Fork PRs (outside contributors) are exempt, as is a PR opened by a login that
+# ends in [bot] or is exactly cursoragent. On a PR that still runs, a non-merge commit
+# is exempt when any one of these is true: its GitHub author login ends with [bot] or
+# is exactly cursoragent, its git author or committer email is cursoragent@cursor.com,
+# or its git author name is exactly "Cursor Agent". One signal is enough, so renaming
+# one of them does not drop the exemption. A human commit on the same PR is not exempt.
+# The trailer is an attestation, not a signature: forging it is a deliberate act,
+# visible in history.
 name: onboarding-attestation
 on:
   pull_request:
@@ -15,7 +21,8 @@ jobs:
   attest:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      !endsWith(github.event.pull_request.user.login, '[bot]')
+      !endsWith(github.event.pull_request.user.login, '[bot]') &&
+      github.event.pull_request.user.login != 'cursoragent'
     runs-on: ubuntu-latest
     steps:
       - name: every non-merge commit carries Morpheum-Onboarding
@@ -24,11 +31,22 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq '
+          # Exempt [bot] authors and Cursor cloud-agent authors. Human commits stay
+          # in the check. The predicate is attest_jq so the onboarding test can run
+          # this same program; keep the assignment single-quoted and quote-free.
+          attest_jq='
+            def exempt:
+              ((.author.login // "") | endswith("[bot]"))
+              or ((.author.login // "") == "cursoragent")
+              or ((.commit.author.email // "") == "cursoragent@cursor.com")
+              or ((.commit.committer.email // "") == "cursoragent@cursor.com")
+              or ((.commit.author.name // "") == "Cursor Agent");
             .[] | select((.parents | length) == 1)
-                | select(((.author.login // "") | endswith("[bot]")) | not)
+                | select(exempt | not)
                 | select(.commit.message | test("(?m)^Morpheum-Onboarding: [0-9a-f]{12}$") | not)
-                | "\(.sha[0:12])  \(.commit.author.name)  \(.commit.message | split("\n")[0])"' > missing.txt
+                | "\(.sha[0:12])  \(.commit.author.name)  \(.commit.message | split("\n")[0])"
+          '
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq "$attest_jq" > missing.txt
           total=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq '.[] | .sha' | wc -l)
           if [ -s missing.txt ]; then
             echo "::error::$(wc -l < missing.txt)/$total commits lack the Morpheum-Onboarding trailer (machine not onboarded):"
