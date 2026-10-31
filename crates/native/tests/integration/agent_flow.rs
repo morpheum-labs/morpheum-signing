@@ -256,3 +256,70 @@ pub async fn test_agent_claim_keeps_a_supplied_sub() {
         "a provider sub is the signed sub"
     );
 }
+
+async fn sign_order_with_manual_sub(
+    claim: TradingKeyClaim,
+    sub: u32,
+) -> Result<SignedTx, SigningError> {
+    let signer = AgentSigner::new(&[99u8; 32], test_account_id(), None);
+    agent(signer)
+        .chain_id(ORDER_CHAIN_ID)
+        .with_genesis_hash(ORDER_GENESIS_HASH)
+        .add_message(Any {
+            type_url: "type.googleapis.com/clob.v1.MsgPlaceOrder".to_string(),
+            value: vec![1],
+        })
+        .with_trading_key_claim(claim)
+        .with_nonce(Nonce {
+            monotonic: 1,
+            ts_ms: 2,
+            sub,
+        })
+        .sign()
+        .await
+}
+
+fn assert_signed_sub(result: Result<SignedTx, SigningError>, sub: u32) {
+    let signed = result.unwrap_or_else(|err| {
+        panic!("nonce.sub {sub} is inside the claim range and must sign, got {err}")
+    });
+    assert_eq!(
+        signed.tx.nonce.as_ref().map(|nonce| nonce.sub),
+        Some(sub),
+        "the manual sub is the signed sub"
+    );
+}
+
+fn assert_sub_rejected(result: Result<SignedTx, SigningError>, sub: u32) {
+    match result {
+        Ok(_) => panic!("nonce.sub {sub} is outside the claim range and must not sign"),
+        Err(SigningError::InvalidClaim(msg)) if msg.contains("outside") => {}
+        Err(err) => panic!("nonce.sub {sub} must fail as an invalid claim, got {err}"),
+    }
+}
+
+#[tokio::test]
+pub async fn test_agent_sign_rejects_nonce_sub_outside_claim_range() {
+    let claim = test_trading_key_claim();
+    let start = claim.nonce_sub_range_start;
+    let end = claim.nonce_sub_range_end;
+    assert!(start > 0, "the fixture range must have a sub below start");
+    assert!(
+        end > start + 1,
+        "the fixture range must contain a last valid sub"
+    );
+
+    assert_signed_sub(
+        sign_order_with_manual_sub(claim.clone(), start).await,
+        start,
+    );
+    assert_signed_sub(
+        sign_order_with_manual_sub(claim.clone(), end - 1).await,
+        end - 1,
+    );
+    assert_sub_rejected(
+        sign_order_with_manual_sub(claim.clone(), start - 1).await,
+        start - 1,
+    );
+    assert_sub_rejected(sign_order_with_manual_sub(claim, end).await, end);
+}
