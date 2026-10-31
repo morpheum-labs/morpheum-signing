@@ -215,3 +215,79 @@ fn test_account_id_derived_from_public_key() {
     let expected_id = signer.public_key().to_account_id();
     assert_eq!(signer.account_id(), expected_id);
 }
+
+fn test_message() -> Any {
+    Any {
+        type_url: "type.googleapis.com/test.v1.MsgTest".to_string(),
+        value: vec![1, 2, 3, 4],
+    }
+}
+
+async fn signer_info_after_sign<S: Signer>(signer: S) -> SignerInfo {
+    let signed = TxBuilder::new(signer)
+        .chain_id("morpheum-test-1")
+        .with_genesis_hash([0x5A_u8; 32])
+        .add_message(test_message())
+        .sign()
+        .await
+        .expect("sign");
+    signed
+        .tx
+        .auth_info
+        .expect("auth info")
+        .signer_infos
+        .into_iter()
+        .next()
+        .expect("signer info")
+}
+
+#[tokio::test]
+async fn test_native_signer_chain_type_after_sign() {
+    let info = signer_info_after_sign(NativeSigner::from_seed(&SEED_A)).await;
+    assert_eq!(info.chain_type, 0);
+}
+
+#[tokio::test]
+async fn test_evm_signer_chain_type_after_sign() {
+    let info = signer_info_after_sign(EvmSigner::from_seed(&SEED_A)).await;
+    assert_eq!(info.chain_type, 1);
+    assert_eq!(
+        info.public_key.expect("public key").type_url,
+        "/morpheum.crypto.secp256k1.PubKey"
+    );
+}
+
+#[tokio::test]
+async fn test_signer_info_chain_type_follows_wallet_type() {
+    let cases = [
+        (
+            "native",
+            signer_info_after_sign(NativeSigner::from_seed(&SEED_A)).await,
+            0,
+        ),
+        (
+            "agent",
+            signer_info_after_sign(AgentSigner::new(&SEED_A, AccountId([0x11; 32]), None)).await,
+            4,
+        ),
+        (
+            "evm",
+            signer_info_after_sign(EvmSigner::from_seed(&SEED_A)).await,
+            1,
+        ),
+        (
+            "solana",
+            signer_info_after_sign(SolanaSigner::from_seed(&SEED_A)).await,
+            2,
+        ),
+        (
+            "bitcoin",
+            signer_info_after_sign(BitcoinSigner::from_seed(&SEED_A)).await,
+            3,
+        ),
+    ];
+
+    for (name, info, chain_type) in cases {
+        assert_eq!(info.chain_type, chain_type, "{name}");
+    }
+}

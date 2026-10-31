@@ -36,9 +36,9 @@ use crate::proto::Any;
 use crate::TxGasLimit;
 
 /// Proto `type_url` for a 20-byte EVM address or a SEC1 secp256k1 key.
-const SECP256K1_PUBKEY_TYPE_URL: &str = "/cosmos.crypto.secp256k1.PubKey";
+const SECP256K1_PUBKEY_TYPE_URL: &str = "/morpheum.crypto.secp256k1.PubKey";
 /// Proto `type_url` for a 32-byte Ed25519 key.
-const ED25519_PUBKEY_TYPE_URL: &str = "/cosmos.crypto.ed25519.PubKey";
+const ED25519_PUBKEY_TYPE_URL: &str = "/morpheum.crypto.ed25519.PubKey";
 /// `ChainType::Ethereum` on the wire. Anything else signs with Ed25519 keys.
 const CHAIN_TYPE_ETHEREUM: i32 = 1;
 
@@ -232,26 +232,28 @@ mod tests {
     // - `GOLDEN_BODY_BYTES`, `GOLDEN_NONCE_BYTES` and `SHIPPED_AUTH_INFO_BYTES`
     //   were captured from the shipped `pkg-node` binding, by calling
     //   `buildSignDocBytes` from Node, before this assembly moved out of the
-    //   wasm crate. That package declared no gas limit.
-    // - `GOLDEN_AUTH_INFO_BYTES` is that capture followed by `AuthInfo` field 2
-    //   carrying `GOLDEN_GAS_LIMIT`, derived from the protobuf encoding rules:
-    //   key `(2 << 3) | 0` = `10`, then varint(1_000_000) = `c0 84 3d`. Known
-    //   fields are written in field-number order and `signer_infos` is field
-    //   1, so the new field is appended.
+    //   wasm crate. That package declared no gas limit and emitted the cosmos
+    //   secp256k1 type URL. The capture stays verbatim.
+    // - `RETARGETED_AUTH_INFO_BYTES` is that capture with the type URL replaced
+    //   by `/morpheum.crypto.secp256k1.PubKey`. The new string is two bytes
+    //   longer, so the type_url, Any, and SignerInfo length prefixes each grow
+    //   by two.
+    // - `GOLDEN_AUTH_INFO_BYTES` is the retargeted capture followed by
+    //   `AuthInfo` field 2 carrying `GOLDEN_GAS_LIMIT`. The field key is
+    //   `(2 << 3) | 0` = `10`, and varint(1_000_000) = `c0 84 3d`.
+    //   `signer_infos` is field 1, so the gas field is appended.
     // - `GOLDEN_SIGN_DOC_HASH` is SHA-256 of the `SignDoc` over these bytes,
-    //   computed by two encoders independent of prost and of
-    //   `morpheum-primitives` that agree on it: `protoc --encode` over the
-    //   schema, and a hand-written protobuf encoder. Each of them, run over
-    //   the shipped `AuthInfo`, also reproduces the shipped capture's hash,
-    //   e2279894897d1b2c7f2621a6812f2baaf2ed617be42a33e40d4d3cdd787b0df7.
+    //   from a hand-written protobuf encoder that does not call this crate.
     const GOLDEN_SIGN_DOC_HASH: &str =
-        "06743104eb0a429e5af80dcecb211184dc8af0e652e72e6d21017c170b6599d3";
+        "386b835a59d5ab292cf4a3ca159392e50bdcfd7a81d14129fff14178a25ea6f5";
     const GOLDEN_BODY_BYTES: &str =
         "0a2d0a212f6275636b65742e76312e4d73674372656174654275636b65745265717565737412080a06676f6c64656e120b676f6c64656e2d6d656d6f";
     const SHIPPED_AUTH_INFO_BYTES: &str =
         "0a410a370a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b65791214abababababababababababababababababababab12040a0208071801";
+    const RETARGETED_AUTH_INFO_BYTES: &str =
+        "0a430a390a212f6d6f72706865756d2e63727970746f2e736563703235366b312e5075624b65791214abababababababababababababababababababab12040a0208071801";
     const GOLDEN_AUTH_INFO_BYTES: &str =
-        "0a410a370a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b65791214abababababababababababababababababababab12040a020807180110c0843d";
+        "0a430a390a212f6d6f72706865756d2e63727970746f2e736563703235366b312e5075624b65791214abababababababababababababababababababab12040a020807180110c0843d";
     const GOLDEN_NONCE_BYTES: &str = "08031080d8d0ca061805";
 
     /// **Golden vector.** Pins the exact bytes a signature covers.
@@ -291,20 +293,11 @@ mod tests {
         );
     }
 
-    /// The golden `AuthInfo` is the shipped capture plus the gas declaration,
-    /// and nothing else.
-    ///
     /// This pins the literals against each other, not the code: no change to
     /// [`build_sign_doc`] can make it fail. [`preimage_matches_the_golden_vector`]
     /// is what ties the literals to assembly.
-    ///
-    /// The shipped capture is what anchors the vector to bytes this code did
-    /// not produce. Holding the golden to "capture plus one field" keeps that
-    /// anchor load-bearing: a golden regenerated from current code would also
-    /// have to rewrite the captured literal, which is then visibly not a
-    /// capture.
     #[test]
-    fn only_the_gas_field_differs_from_the_shipped_preimage() {
+    fn golden_auth_info_is_the_retargeted_capture_plus_gas() {
         let gas_field = AuthInfo {
             signer_infos: Vec::new(),
             gas_limit: GOLDEN_GAS_LIMIT,
@@ -312,8 +305,8 @@ mod tests {
         .encode_to_vec();
         assert_eq!(
             GOLDEN_AUTH_INFO_BYTES,
-            format!("{SHIPPED_AUTH_INFO_BYTES}{}", hex::encode(gas_field)),
-            "the golden AuthInfo must be the shipped capture followed by exactly the gas-limit field",
+            format!("{RETARGETED_AUTH_INFO_BYTES}{}", hex::encode(gas_field)),
+            "the golden AuthInfo must be the retargeted capture followed by exactly the gas-limit field",
         );
 
         let decode = |literal: &str| {
@@ -325,15 +318,30 @@ mod tests {
             .expect("golden literals decode as AuthInfo")
         };
         let shipped = decode(SHIPPED_AUTH_INFO_BYTES);
+        let retargeted = decode(RETARGETED_AUTH_INFO_BYTES);
         assert_eq!(
             shipped.gas_limit, 0,
             "the shipped capture declared no gas limit"
+        );
+        assert_eq!(retargeted.gas_limit, 0);
+        let shipped_key = shipped.signer_infos[0].public_key.clone().unwrap();
+        let retargeted_key = retargeted.signer_infos[0].public_key.clone().unwrap();
+        assert_eq!(shipped_key.type_url, "/cosmos.crypto.secp256k1.PubKey");
+        assert_eq!(retargeted_key.type_url, "/morpheum.crypto.secp256k1.PubKey");
+        assert_eq!(shipped_key.value, retargeted_key.value);
+        assert_eq!(
+            shipped.signer_infos[0].mode_info,
+            retargeted.signer_infos[0].mode_info
+        );
+        assert_eq!(
+            shipped.signer_infos[0].chain_type,
+            retargeted.signer_infos[0].chain_type
         );
         assert_eq!(
             decode(GOLDEN_AUTH_INFO_BYTES),
             AuthInfo {
                 gas_limit: GOLDEN_GAS_LIMIT,
-                ..shipped
+                ..retargeted
             },
         );
     }
@@ -428,7 +436,21 @@ mod tests {
                 .type_url
         };
 
-        assert_eq!(decode(&evm.auth_info_bytes), SECP256K1_PUBKEY_TYPE_URL);
-        assert_eq!(decode(&other.auth_info_bytes), ED25519_PUBKEY_TYPE_URL);
+        assert_eq!(
+            decode(&evm.auth_info_bytes),
+            "/morpheum.crypto.secp256k1.PubKey"
+        );
+        assert_eq!(
+            decode(&other.auth_info_bytes),
+            "/morpheum.crypto.ed25519.PubKey"
+        );
+        let chain_type = |bytes: &[u8]| {
+            AuthInfo::decode(bytes)
+                .expect("AuthInfo must decode")
+                .signer_infos[0]
+                .chain_type
+        };
+        assert_eq!(chain_type(&evm.auth_info_bytes), 1);
+        assert_eq!(chain_type(&other.auth_info_bytes), 2);
     }
 }

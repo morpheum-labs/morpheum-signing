@@ -456,7 +456,7 @@ impl<S: Signer> TxBuilder<S> {
                     mode: self.signer.sign_mode() as i32,
                 })),
             }),
-            chain_type: 0,
+            chain_type: self.signer.wallet_type().chain_type(),
             deadline: self.signing_options.deadline_seconds.unwrap_or(0),
             signing_options: None,
             timestamp: None,
@@ -592,6 +592,61 @@ mod tests {
         fn wallet_type(&self) -> WalletType {
             WalletType::Native
         }
+    }
+
+    struct TypedSigner {
+        wallet_type: WalletType,
+        public_key: PublicKey,
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Signer for TypedSigner {
+        async fn sign(&self, _sign_doc: &SignDoc) -> Result<Signature, SigningError> {
+            Ok(Signature::Ed25519([0u8; 64]))
+        }
+
+        fn public_key(&self) -> PublicKey {
+            self.public_key.clone()
+        }
+
+        fn wallet_type(&self) -> WalletType {
+            self.wallet_type
+        }
+    }
+
+    fn typed_signer(wallet_type: WalletType) -> TypedSigner {
+        let public_key = match wallet_type {
+            WalletType::Evm => PublicKey::Secp256k1([0x02; 33]),
+            WalletType::Bitcoin => PublicKey::Schnorr([0x03; 32]),
+            WalletType::Agent => PublicKey::Agent([0x04; 32]),
+            WalletType::Native | WalletType::Solana | WalletType::Hardware => {
+                PublicKey::Ed25519([0x01; 32])
+            }
+        };
+        TypedSigner {
+            wallet_type,
+            public_key,
+        }
+    }
+
+    async fn signed_signer_info(wallet_type: WalletType) -> SignerInfo {
+        let signed = TxBuilder::new(typed_signer(wallet_type))
+            .chain_id("morpheum-test-1")
+            .with_genesis_hash(TEST_GENESIS_HASH)
+            .add_message(stub_message())
+            .sign()
+            .await
+            .expect("sign");
+        signed
+            .tx()
+            .auth_info
+            .as_ref()
+            .expect("auth info")
+            .signer_infos
+            .first()
+            .expect("signer info")
+            .clone()
     }
 
     fn stub_message() -> crate::proto::Any {
@@ -989,5 +1044,32 @@ mod tests {
             "decoded body.urgent must be false after prost encode → decode \
              (proto3 elides the default value, which decodes as false)."
         );
+    }
+
+    #[tokio::test]
+    async fn an_evm_signer_sets_chain_type_to_1() {
+        let info = signed_signer_info(WalletType::Evm).await;
+        assert_eq!(info.chain_type, 1);
+        let public_key = info.public_key.expect("public key");
+        assert_eq!(public_key.type_url, "/morpheum.crypto.secp256k1.PubKey");
+    }
+
+    #[tokio::test]
+    async fn a_native_signer_sets_chain_type_to_0() {
+        let info = signed_signer_info(WalletType::Native).await;
+        assert_eq!(info.chain_type, 0);
+    }
+
+    #[tokio::test]
+    async fn sign_uses_the_documented_wallet_type_discriminant() {
+        for (wallet_type, chain_type) in [
+            (WalletType::Solana, 2),
+            (WalletType::Bitcoin, 3),
+            (WalletType::Agent, 4),
+            (WalletType::Hardware, 255),
+        ] {
+            let info = signed_signer_info(wallet_type).await;
+            assert_eq!(info.chain_type, chain_type, "{wallet_type}");
+        }
     }
 }
