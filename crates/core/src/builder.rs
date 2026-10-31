@@ -338,8 +338,9 @@ impl<S: Signer> TxBuilder<S> {
     /// When the caller sets neither a manual nonce nor a nonce provider,
     /// `sign` sets `nonce.sub` to the claim's `nonce_sub_range_start`. That
     /// start is inside `[start, end)` for every claim `sign` accepts. A
-    /// manual nonce or a provider nonce, including its `sub`, is left as
-    /// supplied.
+    /// manual nonce or a provider nonce keeps the `sub` it supplied when
+    /// that `sub` is inside `[start, end)`. Otherwise `sign` returns
+    /// [`SigningError::InvalidClaim`] and does not sign.
     #[must_use]
     pub fn with_trading_key_claim(mut self, claim: TradingKeyClaim) -> Self {
         self.trading_key_claim = Some(claim);
@@ -457,6 +458,11 @@ impl<S: Signer> TxBuilder<S> {
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             claim.validate(now_secs)?;
+            if !(claim.nonce_sub_range_start..claim.nonce_sub_range_end).contains(&nonce.sub) {
+                return Err(SigningError::invalid_claim(
+                    "nonce sub is outside the trading key claim range",
+                ));
+            }
 
             let claim_any = claim.to_proto_any();
             signer_info.signing_options = Some(tx::SigningOptions {
