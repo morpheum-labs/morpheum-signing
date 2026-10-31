@@ -50,7 +50,7 @@ pub struct VerifiedTx {
     /// Extracted and structurally verified `TradingKeyClaim` (agent flow only).
     ///
     /// Present when a signer's `signing_options` contains a claim with
-    /// `algo_hint == "trading_key_claim"`. The claim's subject has been
+    /// `algo_hint == "trading_key_claim"`. The claim's issuer has been
     /// verified to match the signer's public key, and expiry has been checked.
     pub trading_key_claim: Option<TradingKeyClaim>,
 
@@ -121,7 +121,7 @@ pub struct VerifiedTx {
 /// - A binding `ctx` requires would be vacuous (genesis binding required but
 ///   `ctx` carries no genesis hash, or nonce binding required but the
 ///   transaction carries no nonce).
-/// - A `TradingKeyClaim` is malformed, expired, or names a subject other than the signing key.
+/// - A `TradingKeyClaim` is malformed, expired, or has issuer mismatch.
 pub fn verify_signed_tx(
     signed_tx: &SignedTx,
     ctx: &TxVerifyContext<'_>,
@@ -225,12 +225,8 @@ pub fn verify_signed_tx(
         // 5. Extract TradingKeyClaim if present (agent flow)
         if let Some(opts) = &si.signing_options {
             if let Some(claim) = TradingKeyClaim::decode_from_signing_options(opts)? {
-                claim.validate(now)?;
-                if claim.subject != pubkey.to_account_id() {
-                    return Err(SigningError::claim_verification(
-                        "claim subject does not match the signing key",
-                    ));
-                }
+                // Structural + issuer verification (expiry + issuer-pubkey match)
+                claim.verify(now, &pubkey)?;
 
                 trading_key_claim = Some(claim);
             }
