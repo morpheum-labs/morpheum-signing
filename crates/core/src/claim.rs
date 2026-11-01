@@ -382,3 +382,232 @@ impl VcClaimBuilder {
         Ok(claim)
     }
 }
+
+#[cfg(test)]
+mod verify_by_signature_kind {
+    use super::*;
+    use crate::types::{AccountId, PublicKey, Signature};
+    use crate::SigningError;
+
+    const NOW: u64 = 1_700_000_000;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Kind {
+        Ed25519,
+        Secp256k1,
+        Schnorr,
+    }
+
+    const KINDS: [Kind; 3] = [Kind::Ed25519, Kind::Secp256k1, Kind::Schnorr];
+
+    fn issuer_key(kind: Kind) -> PublicKey {
+        match kind {
+            Kind::Ed25519 => PublicKey::Ed25519([0xA1; 32]),
+            Kind::Secp256k1 => {
+                let mut bytes = [0x02; 33];
+                bytes[1] = 0xB2;
+                PublicKey::Secp256k1(bytes)
+            }
+            Kind::Schnorr => PublicKey::Schnorr([0xC3; 32]),
+        }
+    }
+
+    fn signature_of(kind: Kind, nonzero: bool) -> Signature {
+        let byte = if nonzero {
+            match kind {
+                Kind::Ed25519 => 0x11,
+                Kind::Secp256k1 => 0x22,
+                Kind::Schnorr => 0x33,
+            }
+        } else {
+            0
+        };
+        let bytes = [byte; 64];
+        match kind {
+            Kind::Ed25519 => Signature::Ed25519(bytes),
+            Kind::Secp256k1 => Signature::Secp256k1(bytes),
+            Kind::Schnorr => Signature::Schnorr(bytes),
+        }
+    }
+
+    fn issued(issuer: &PublicKey, signature: Signature) -> TradingKeyClaim {
+        VcClaimBuilder::new()
+            .issuer(issuer.to_account_id())
+            .subject(AccountId([0x11; 32]))
+            .permissions(1)
+            .expiry(NOW + 3_600)
+            .nonce_sub_range(0, 1)
+            .signature(signature)
+            .build(NOW)
+            .expect("fixture claim builds")
+    }
+
+    #[test]
+    fn each_issuer_key_accepts_every_nonzero_signature_variant() {
+        let mut ids = KINDS.map(|kind| issuer_key(kind).to_account_id());
+        ids.sort_by_key(|id| id.0);
+        assert_ne!(ids[0], ids[1], "issuer account ids must be distinct");
+        assert_ne!(ids[1], ids[2], "issuer account ids must be distinct");
+
+        for issuer_kind in KINDS {
+            let key = issuer_key(issuer_kind);
+            for signature_kind in KINDS {
+                let claim = issued(&key, signature_of(signature_kind, true));
+                assert!(
+                    claim.verify(NOW, &key).is_ok(),
+                    "{issuer_kind:?} issuer rejected a nonzero {signature_kind:?} signature"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_issuer_key_rejects_a_zero_signature_of_every_variant() {
+        for issuer_kind in KINDS {
+            let key = issuer_key(issuer_kind);
+            for signature_kind in KINDS {
+                let mut claim = issued(&key, signature_of(signature_kind, true));
+                claim.signature = signature_of(signature_kind, false);
+                let err = claim
+                    .verify(NOW, &key)
+                    .expect_err("a zero signature is missing");
+                assert!(
+                    matches!(err, SigningError::InvalidClaim(ref msg) if msg.contains("missing signature")),
+                    "{issuer_kind:?} issuer with a zero {signature_kind:?} signature returned {err:?}"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "cryptogram")]
+    mod signed_under_its_curve {
+        use super::*;
+        use crate::cryptogram_crypto::{
+            ecdsa_sign, ed25519_public_key, ed25519_sign, ed25519_verify, public_key_from_secret,
+            recover_compressed_pubkey, schnorr_sign, schnorr_verify, schnorr_x_only_pubkey,
+        };
+
+        const ED_SEED: [u8; 32] = [0x11; 32];
+        const SECP_SEED: [u8; 32] = [0x22; 32];
+        const SCHNORR_SEED: [u8; 32] = [0x33; 32];
+
+        struct Produced {
+            bytes: [u8; 64],
+            recovery: u8,
+        }
+
+        fn on_curve_key(kind: Kind) -> PublicKey {
+            match kind {
+                Kind::Ed25519 => PublicKey::Ed25519(ed25519_public_key(&ED_SEED)),
+                Kind::Secp256k1 => {
+                    let key = public_key_from_secret(&SECP_SEED).expect("secp256k1 seed");
+                    PublicKey::Secp256k1(key.serialize())
+                }
+                Kind::Schnorr => {
+                    PublicKey::Schnorr(schnorr_x_only_pubkey(&SCHNORR_SEED).expect("schnorr seed"))
+                }
+            }
+        }
+
+        fn produce(kind: Kind, digest: &[u8; 32]) -> Produced {
+            match kind {
+                Kind::Ed25519 => Produced {
+                    bytes: ed25519_sign(digest, &ED_SEED).expect("ed25519 sign"),
+                    recovery: 0,
+                },
+                Kind::Secp256k1 => {
+                    let full = ecdsa_sign(digest, &SECP_SEED).expect("secp256k1 sign");
+                    assert_eq!(full.len(), 65, "ecdsa_sign returns r || s || v");
+                    let mut bytes = [0u8; 64];
+                    bytes.copy_from_slice(&full[..64]);
+                    Produced {
+                        bytes,
+                        recovery: full[64],
+                    }
+                }
+                Kind::Schnorr => Produced {
+                    bytes: schnorr_sign(digest, &SCHNORR_SEED).expect("schnorr sign"),
+                    recovery: 0,
+                },
+            }
+        }
+
+        fn wrap(kind: Kind, bytes: [u8; 64]) -> Signature {
+            match kind {
+                Kind::Ed25519 => Signature::Ed25519(bytes),
+                Kind::Secp256k1 => Signature::Secp256k1(bytes),
+                Kind::Schnorr => Signature::Schnorr(bytes),
+            }
+        }
+
+        fn secp_recovers(digest: &[u8; 32], produced: &Produced, key: &[u8; 33]) -> bool {
+            let mut signature = [0u8; 65];
+            signature[..64].copy_from_slice(&produced.bytes);
+            let mut try_v = |v: u8| {
+                signature[64] = v;
+                recover_compressed_pubkey(digest, &signature).ok() == Some(*key)
+            };
+            if produced.recovery == 27 || produced.recovery == 28 {
+                try_v(produced.recovery)
+            } else {
+                try_v(27) || try_v(28)
+            }
+        }
+
+        fn verifies(kind: Kind, key: &PublicKey, digest: &[u8; 32], produced: &Produced) -> bool {
+            match (kind, key) {
+                (Kind::Ed25519, PublicKey::Ed25519(pk)) => {
+                    ed25519_verify(digest, &produced.bytes, pk).unwrap_or(false)
+                }
+                (Kind::Secp256k1, PublicKey::Secp256k1(pk)) => secp_recovers(digest, produced, pk),
+                (Kind::Schnorr, PublicKey::Schnorr(pk)) => {
+                    schnorr_verify(digest, &produced.bytes, pk).unwrap_or(false)
+                }
+                _ => false,
+            }
+        }
+
+        #[test]
+        fn a_signature_valid_under_one_curve_verifies_for_every_issuer_key() {
+            let keys = KINDS.map(on_curve_key);
+            let mut ids = keys.clone().map(|key| key.to_account_id());
+            ids.sort_by_key(|id| id.0);
+            assert_ne!(
+                ids[0], ids[1],
+                "on-curve issuer account ids must be distinct"
+            );
+            assert_ne!(
+                ids[1], ids[2],
+                "on-curve issuer account ids must be distinct"
+            );
+
+            for (checker_index, checker) in KINDS.into_iter().enumerate() {
+                let checker_key = &keys[checker_index];
+                for signer in KINDS {
+                    let mut claim = issued(checker_key, Signature::Ed25519([1u8; 64]));
+                    let digest = claim.claim_digest();
+                    let produced = produce(signer, &digest);
+                    assert!(
+                        verifies(signer, &keys[index(signer)], &digest, &produced),
+                        "signature from {signer:?} did not verify under that curve"
+                    );
+                    claim.signature = wrap(signer, produced.bytes);
+                    assert!(
+                        claim.verify(NOW, checker_key).is_ok(),
+                        "{checker:?} issuer rejected a signature from {signer:?}"
+                    );
+                    if signer != checker {
+                        assert!(
+                            !verifies(checker, checker_key, &digest, &produced),
+                            "signature from {signer:?} also verified under {checker:?}"
+                        );
+                    }
+                }
+            }
+        }
+
+        fn index(kind: Kind) -> usize {
+            KINDS.iter().position(|item| *item == kind).expect("kind")
+        }
+    }
+}
