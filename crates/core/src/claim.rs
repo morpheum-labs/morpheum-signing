@@ -382,3 +382,85 @@ impl VcClaimBuilder {
         Ok(claim)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{AccountId, Signature};
+
+    #[test]
+    fn test_claim_digest_golden_vector() {
+        let issuer = AccountId([0x01; 32]);
+        let subject = AccountId([0x02; 32]);
+        let permissions = 0xFF;
+        let max_daily_usd = 10000;
+        let expiry_timestamp = u64::MAX;
+        let nonce_sub_range_start = 0;
+        let nonce_sub_range_end = 1000;
+
+        let expected_preimage_hex = "0a2001010101010101010101010101010101010101010101010101010101010101011220020202020202020202020202020202020202020202020202020202020202020218ff0120904e28ffffffffffffffffff0138e807";
+        let expected_digest_hex =
+            "23da25080d6e64ac72467abcd8c228046c2c73356f13d6f22cc92e35434289ce";
+
+        let unsigned_proto = TradingKeyClaimProto {
+            issuer: issuer.0.to_vec(),
+            subject: subject.0.to_vec(),
+            permissions,
+            max_daily_usd,
+            expiry_timestamp,
+            nonce_sub_range_start,
+            nonce_sub_range_end,
+            signature: Vec::new(),
+        };
+        let preimage_bytes = unsigned_proto.encode_to_vec();
+        let preimage_hex = hex::encode(&preimage_bytes);
+
+        assert_eq!(
+            preimage_hex, expected_preimage_hex,
+            "Preimage bytes mismatch:\n  actual:   {}\n  expected: {}",
+            preimage_hex, expected_preimage_hex
+        );
+
+        let claim_zero_sig = TradingKeyClaim {
+            issuer,
+            subject,
+            permissions,
+            max_daily_usd,
+            expiry_timestamp,
+            nonce_sub_range_start,
+            nonce_sub_range_end,
+            signature: Signature::Ed25519([0u8; 64]),
+        };
+
+        let digest = claim_zero_sig.claim_digest();
+        let digest_hex = hex::encode(digest);
+
+        assert_eq!(
+            digest_hex, expected_digest_hex,
+            "Digest mismatch:\n  actual:   {}\n  expected: {}",
+            digest_hex, expected_digest_hex
+        );
+
+        let issuer2 = AccountId([0x01; 32]);
+        let subject2 = AccountId([0x02; 32]);
+        let claim_nonzero_sig = TradingKeyClaim {
+            issuer: issuer2,
+            subject: subject2,
+            permissions,
+            max_daily_usd,
+            expiry_timestamp,
+            nonce_sub_range_start,
+            nonce_sub_range_end,
+            signature: Signature::Ed25519([0xAB; 64]),
+        };
+
+        let digest_with_sig = claim_nonzero_sig.claim_digest();
+        let digest_with_sig_hex = hex::encode(digest_with_sig);
+
+        assert_eq!(
+            digest_with_sig_hex, expected_digest_hex,
+            "Digest changed with non-zero signature:\n  actual:   {}\n  expected: {}",
+            digest_with_sig_hex, expected_digest_hex
+        );
+    }
+}
